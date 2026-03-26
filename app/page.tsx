@@ -787,99 +787,13 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="bp-header-actions w-full shrink-0 lg:max-w-md">
-            <div className="min-w-0 flex-1 space-y-3 lg:min-w-[220px]">
-              <label htmlFor="team-name-input" className="sr-only">
-                Joukkueen nimi
-              </label>
-              <input
-                id="team-name-input"
-                type="text"
-                placeholder="Joukkueen nimi"
-                value={teamNameInput}
-                onChange={e => setTeamNameInput(e.target.value)}
-                className="bp-input"
-              />
-              {/* Mobiili: napit heti inputin alle (ennen logon valintaa) */}
-              <div className="flex flex-col gap-2 lg:hidden">
-                <button type="button" onClick={() => updateTeamName(teamNameInput)} className="bp-btn-primary">
-                  <span className="bp-btn-text-stack">
-                    <span>Tallenna</span>
-                    <span className="bp-btn-subtext bp-btn-subtext--primary">
-                      Tallentaa joukkueen nimen
-                    </span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => supabase.auth.signOut()}
-                  className="bp-btn-logout"
-                >
-                  <span className="bp-btn-text-stack">
-                    <span>Ulos</span>
-                    <span className="bp-btn-subtext bp-btn-subtext--logout">
-                      Kirjaudu ulos sivulta
-                    </span>
-                  </span>
-                </button>
-              </div>
-
-              {(teamLogoPath || parseTeamLogoId(profiles.find((p: any) => p.id === user.id)?.team_logo_id)) && (
-                <div className="bp-team-logo-preview">
-                  <TeamLogo
-                    logoPath={teamLogoPath}
-                    logoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
-                    fallbackName={teamDisplayName}
-                    size="md"
-                    className="bp-team-logo-preview-img"
-                  />
-                  <span className="bp-team-logo-preview-name min-w-0 flex-1 truncate">{teamDisplayName}</span>
-                </div>
-              )}
-              <fieldset className="bp-team-logo-fieldset">
-                <legend className="bp-team-logo-legend">Joukkueen logo</legend>
-                <p className="bp-team-logo-help">
-                  Lataa oma kuva (PNG, JPEG, WebP tai GIF, enintään 2 Mt). Näkyy pelaajatorilla, tuloksissa ja omassa joukkueessa.
-                </p>
-                <input
-                  ref={teamLogoFileRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  className="sr-only"
-                  id="team-logo-file"
-                  onChange={onTeamLogoFileChange}
-                />
-                <div className="bp-team-logo-actions">
-                  <button
-                    type="button"
-                    disabled={uploadingLogo}
-                    onClick={() => teamLogoFileRef.current?.click()}
-                    className="bp-btn-primary text-[14px] py-3 px-3"
-                  >
-                    {uploadingLogo ? 'Lähetetään…' : 'Valitse kuva'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!teamLogoPath || uploadingLogo}
-                    onClick={() => removeTeamLogo()}
-                    className="bp-btn-danger text-[14px] py-3 px-3"
-                  >
-                    Poista logo
-                  </button>
-                </div>
-              </fieldset>
-            </div>
-            {/* Desktop: napit oikealla kuten aiemmin */}
-            <div className="flex shrink-0 gap-2 hidden lg:flex">
-              <button type="button" onClick={() => updateTeamName(teamNameInput)} className="bp-btn-primary">
-                <span className="bp-btn-text-stack">
-                  <span>Tallenna</span>
-                  <span className="bp-btn-subtext bp-btn-subtext--primary">
-                    Tallentaa joukkueen nimen
-                  </span>
-                </span>
-              </button>
-              <button type="button" onClick={() => supabase.auth.signOut()} className="bp-btn-logout">
+          <div className="bp-header-actions w-full shrink-0 lg:max-w-xs">
+            <div className="flex flex-col gap-2 lg:items-end">
+              <button
+                type="button"
+                onClick={() => supabase.auth.signOut()}
+                className="bp-btn-logout"
+              >
                 <span className="bp-btn-text-stack">
                   <span>Ulos</span>
                   <span className="bp-btn-subtext bp-btn-subtext--logout">
@@ -972,7 +886,98 @@ export default function Home() {
 
       {mainTab === 'team' && (
         <section className="pm-section">
-          <UserTeam 
+          <div className="pm-card pm-card--stack mb-2">
+            <div className="pm-row-dense mb-3">
+              <TeamLogo
+                logoPath={teamLogoPath}
+                logoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
+                fallbackName={teamDisplayName}
+                size="md"
+              />
+              <div className="min-w-0">
+                <h2 className="pm-title">{teamDisplayName}</h2>
+                <p className="pm-sub">Muokkaa joukkueen nimeä ja logoa.</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="team-name-input" className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">
+                  Joukkueen nimi
+                </label>
+                <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    id="team-name-input"
+                    type="text"
+                    placeholder="Joukkueen nimi"
+                    value={teamNameInput}
+                    onChange={e => setTeamNameInput(e.target.value)}
+                    className="bp-input flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateTeamName(teamNameInput)}
+                    className="bp-btn-primary text-[13px] px-4 py-2"
+                  >
+                    <span className="bp-btn-text-stack">
+                      <span>Tallenna</span>
+                      <span className="bp-btn-subtext bp-btn-subtext--primary">
+                        Tallentaa joukkueen nimen
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <fieldset className="bp-team-logo-fieldset">
+                <legend className="bp-team-logo-legend">Joukkueen logo</legend>
+                <p className="bp-team-logo-help">
+                  Lataa oma kuva (PNG, JPEG, WebP tai GIF, enintään 2 Mt). Näkyy pelaajatorilla, tuloksissa ja omassa joukkueessa.
+                </p>
+                <input
+                  ref={teamLogoFileRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="sr-only"
+                  id="team-logo-file"
+                  onChange={onTeamLogoFileChange}
+                />
+                {(teamLogoPath || parseTeamLogoId(profiles.find((p: any) => p.id === user.id)?.team_logo_id)) && (
+                  <div className="bp-team-logo-preview mb-2">
+                    <TeamLogo
+                      logoPath={teamLogoPath}
+                      logoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
+                      fallbackName={teamDisplayName}
+                      size="md"
+                      className="bp-team-logo-preview-img"
+                    />
+                    <span className="bp-team-logo-preview-name min-w-0 flex-1 truncate">
+                      {teamDisplayName}
+                    </span>
+                  </div>
+                )}
+                <div className="bp-team-logo-actions">
+                  <button
+                    type="button"
+                    disabled={uploadingLogo}
+                    onClick={() => teamLogoFileRef.current?.click()}
+                    className="bp-btn-primary text-[14px] py-3 px-3"
+                  >
+                    {uploadingLogo ? 'Lähetetään…' : 'Valitse kuva'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!teamLogoPath || uploadingLogo}
+                    onClick={() => removeTeamLogo()}
+                    className="bp-btn-danger text-[14px] py-3 px-3"
+                  >
+                    Poista logo
+                  </button>
+                </div>
+              </fieldset>
+            </div>
+          </div>
+
+          <UserTeam
             team={team}
             isLocked={activeTournament?.is_locked}
             onRemove={removePlayer}
