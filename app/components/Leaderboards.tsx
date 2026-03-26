@@ -8,6 +8,7 @@ interface BoardEntry {
   pts: number;
   isDQ?: boolean;
   lineup?: Array<{ playerName: string; points: number }>;
+  tournamentLines?: Array<{ tournamentName: string; points: number }>;
 }
 
 interface LeaderboardsProps {
@@ -41,27 +42,16 @@ function resolveEntryUid(entry: BoardEntry, tab: "tournament" | "season", profil
   return profiles.find((p: any) => p.team_name === n)?.id;
 }
 
-function SeasonPlayerLineup({
-  rows,
-  playerInitials,
-}: {
-  rows: Array<{ playerName: string; points: number }>;
-  playerInitials: (n: string) => string;
-}) {
+function SeasonTournamentLines({ rows }: { rows: Array<{ tournamentName: string; points: number }> }) {
   return (
     <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
       {rows.map((row, i) => (
         <div
-          key={`${row.playerName}-${i}`}
+          key={`${row.tournamentName}-${i}`}
           className="flex items-center justify-between gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-2 py-1.5"
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="pm-avatar pm-avatar--sm" aria-hidden>
-              {playerInitials(row.playerName)}
-            </div>
-            <span className="truncate text-xs font-semibold text-white/90">{row.playerName}</span>
-          </div>
-          <span className="shrink-0 text-xs font-extrabold tabular-nums text-sky-200/95">{row.points} p</span>
+          <span className="min-w-0 truncate text-xs font-semibold text-white/90">{row.tournamentName}</span>
+          <span className="shrink-0 text-xs font-extrabold tabular-nums text-emerald-200/95">{row.points} p</span>
         </div>
       ))}
     </div>
@@ -154,9 +144,15 @@ export default function Leaderboards({
           <h2 className="pm-title">Tulokset</h2>
           <p className="pm-sub">{sub}</p>
           <p className="mt-1 text-[11px] text-white/40">
-            {!isLocked
-              ? "Avaa oma rivi nähdäksesi rosterisi. Lukitse kisa nähdäksesi myös muiden joukkueiden pelaajat ja hankinnat."
-              : "Avaa rivi nähdäksesi valitut pelaajat (pisteet, rating, hankinta)."}
+            {tab === "season" ? (
+              !isLocked
+                ? "Avaa oma rivi nähdäksesi kunkin kisan pisteet. Lukitse kisa nähdäksesi myös muiden tiimien erittelyn."
+                : "Avaa rivi nähdäksesi kaikkien tiimien kunkin kisan pisteet."
+            ) : !isLocked ? (
+              "Avaa oma rivi nähdäksesi rosterisi. Lukitse kisa nähdäksesi myös muiden joukkueiden pelaajat ja hankinnat."
+            ) : (
+              "Avaa rivi nähdäksesi valitut pelaajat (pisteet, rating, hankinta)."
+            )}
           </p>
         </div>
         <div className="bp-subtab-row shrink-0">
@@ -215,10 +211,10 @@ export default function Leaderboards({
               );
             }
           } else if (show && tab === "season") {
-            const lineup = entry.lineup?.length ? entry.lineup : [];
-            expandable = lineup.length > 0;
+            const lines = entry.tournamentLines?.length ? entry.tournamentLines : [];
+            expandable = lines.length > 0;
             if (expandable) {
-              expandedBody = <SeasonPlayerLineup rows={lineup} playerInitials={initials} />;
+              expandedBody = <SeasonTournamentLines rows={lines} />;
             }
           }
 

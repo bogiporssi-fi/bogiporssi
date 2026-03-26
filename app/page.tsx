@@ -529,46 +529,69 @@ export default function Home() {
   })();
 
   const seasonBoard = (() => {
-    /** Kausi = kaikkien arkistoitujen kisojen pisteet tiimin nimellä + tämänhetkisen kisan pisteet (ei duplikaattia, kun kisa arkistoidaan historiaan). */
+    /** Kausi = kaikkien arkistoitujen kisojen pisteet tiimin nimellä + tämänhetkisen kisan pisteet. */
     const totals = new Map<string, number>();
-    const playerPointsByTeam = new Map<string, Map<string, number>>();
+    const pointsByTeamAndTournament = new Map<string, Map<string, number>>();
+    const tournamentOrder: string[] = [];
+    const seenTournaments = new Set<string>();
 
-    const addPlayerPts = (teamName: string, playerName: string, pts: number) => {
-      if (!playerPointsByTeam.has(teamName)) playerPointsByTeam.set(teamName, new Map());
-      const m = playerPointsByTeam.get(teamName)!;
-      const p = playerName || '?';
-      m.set(p, (m.get(p) || 0) + pts);
+    const addTeamTournamentPts = (teamName: string, tournamentName: string, pts: number) => {
+      if (!pointsByTeamAndTournament.has(teamName)) pointsByTeamAndTournament.set(teamName, new Map());
+      const m = pointsByTeamAndTournament.get(teamName)!;
+      m.set(tournamentName, (m.get(tournamentName) || 0) + pts);
+      totals.set(teamName, (totals.get(teamName) || 0) + pts);
     };
 
+    // 1) Arkistoidut kisat (history sisältää jo earned_points per pelaaja/tiimi)
     history.forEach((row: any) => {
       const teamName = row.team_name || 'Nimetön tiimi';
+      const tournamentName = row.tournament_name || 'Tuntematon turnaus';
       const pts = Number(row.earned_points) || 0;
-      totals.set(teamName, (totals.get(teamName) || 0) + pts);
-      addPlayerPts(teamName, row.player_name || '?', pts);
+
+      addTeamTournamentPts(teamName, tournamentName, pts);
+
+      if (!seenTournaments.has(tournamentName)) {
+        seenTournaments.add(tournamentName);
+        tournamentOrder.push(tournamentName);
+      }
     });
+
+    // 2) Tämänhetkinen aktiivinen kisa (allTeamsPicks = aktiivisen kisan picks)
+    const activeTournamentName = activeTournament?.name || 'Aktiivinen kisa';
+    if (!seenTournaments.has(activeTournamentName)) {
+      // Aktiivinen kisa mieluummin ensin erittelyssä
+      seenTournaments.add(activeTournamentName);
+      tournamentOrder.unshift(activeTournamentName);
+    }
 
     allTeamsPicks.forEach((pick: any) => {
       const uid = pick.user_id;
       if (!uid) return;
-      const pts = getPickPoints(pick);
+
       const teamName = getTeamDisplayNameByUid(uid);
-      totals.set(teamName, (totals.get(teamName) || 0) + pts);
-      addPlayerPts(teamName, pick.players?.name, pts);
+      const pts = getPickPoints(pick);
+      addTeamTournamentPts(teamName, activeTournamentName, pts);
     });
 
     return Array.from(totals.entries())
-      .map(([name, pts]) => ({
-        name,
-        pts,
-        lineup: Array.from((playerPointsByTeam.get(name) || new Map()).entries())
-          .map(([playerName, p]) => ({ playerName, points: p }))
-          .sort((a, b) => b.points - a.points),
-      }))
+      .map(([name, pts]) => {
+        const m = pointsByTeamAndTournament.get(name) || new Map<string, number>();
+        const tournamentLines = tournamentOrder
+          .map((tName) => ({ tournamentName: tName, points: m.get(tName) || 0 }))
+          .filter((line) => line.points !== 0);
+
+        return {
+          name,
+          pts,
+          tournamentLines,
+        };
+      })
       .sort((a, b) => b.pts - a.pts);
   })();
 
   const hallOfFameItems = (() => {
     const fallback = 'Ei dataa vielä';
+    const revealMostPopular = Boolean(activeTournament?.is_locked);
 
     const currentTeamNameByUid = (uid: string) => {
       const pr = profiles.find((p: any) => p.id === uid);
@@ -710,8 +733,8 @@ export default function Home() {
       {
         emoji: '⭐',
         title: 'Suosituin valinta',
-        value: mostPopular ? `${mostPopular.name} (${mostPopular.count} managerin joukkueessa)` : fallback,
-        detail: 'Useimmin managerien valitsema pelaaja',
+        value: revealMostPopular && mostPopular ? `${mostPopular.name} (${mostPopular.count} managerin joukkueessa)` : fallback,
+        detail: revealMostPopular ? 'Useimmin managerien valitsema pelaaja' : 'Piilotettu kunnes kisa on lukittu',
       },
       {
         emoji: '🚀',
