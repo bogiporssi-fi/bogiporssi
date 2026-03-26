@@ -1,26 +1,947 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: dark;
+  --bp-bg: #121212;
+  --bp-surface: rgba(255, 255, 255, 0.04);
+  --bp-surface-2: rgba(255, 255, 255, 0.06);
+  --bp-border: rgba(255, 255, 255, 0.10);
+  --bp-text: rgba(255, 255, 255, 0.92);
+  --bp-muted: rgba(255, 255, 255, 0.64);
+  --bp-emerald: #34d399; /* emerald-400 */
+  --bp-gold: #fbbf24;    /* amber-400 */
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bp-bg);
+  color: var(--bp-text);
+}
+
+.bp-card {
+  border-radius: 16px;
+  border: 1px solid var(--bp-border);
+  background: var(--bp-surface);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Yläpalkki — logo + brändi */
+.bp-header {
+  position: relative;
+  overflow: hidden;
+}
+.bp-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    125deg,
+    rgba(52, 211, 153, 0.09) 0%,
+    transparent 52%,
+    rgba(251, 191, 36, 0.04) 100%
+  );
+}
+.bp-header-inner {
+  position: relative;
+  z-index: 1;
+}
+.bp-header-logo-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  background: linear-gradient(
+    165deg,
+    rgba(52, 211, 153, 0.14) 0%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.bp-header-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  padding: 2px;
+}
+.bp-header-kicker {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.75);
+}
+.bp-header-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bp-header-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.bp-header-brand-text {
+  /* Tuo bränditekstit selvästi kauemmas logon reunasta */
+  padding-left: 16px;
+}
+.bp-header-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Joukkuelogon valinta (yläpalkki) */
+.bp-team-logo-fieldset {
+  margin: 0;
+  padding: 0.65rem 0.75rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  min-width: 0;
+}
+.bp-team-logo-legend {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.9);
+  margin-bottom: 6px;
+}
+.bp-team-logo-help {
+  margin-bottom: 0.6rem;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.55);
+}
+.bp-team-logo-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.bp-team-logo-actions .bp-btn-primary,
+.bp-team-logo-actions .bp-btn-danger {
+  width: 100%;
+  min-height: 52px;
+}
+.bp-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.14);
+  font-weight: 700;
+  color: rgba(254, 226, 226, 0.96);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.bp-btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.7);
+}
+.bp-btn-danger:disabled {
+  pointer-events: none;
+  opacity: 0.35;
+}
+.bp-team-logo-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.bp-team-logo-preview-img.pm-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.bp-team-logo-preview-name {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.95);
+  min-width: 0;
+}
+.bp-team-logo-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  max-width: 220px;
+}
+@media (min-width: 640px) {
+  .bp-team-logo-grid {
+    max-width: none;
+  }
+}
+.bp-team-logo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  overflow: hidden;
+}
+.bp-team-logo-btn:hover {
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.08);
+}
+.bp-team-logo-btn:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.55);
+  outline-offset: 2px;
+}
+.bp-team-logo-btn--selected {
+  border-color: rgba(52, 211, 153, 0.75);
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.2);
+  background: rgba(52, 211, 153, 0.1);
+}
+.bp-team-logo-btn img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+}
+.bp-team-logo-none {
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.35);
+}
+@media (min-width: 640px) {
+  .bp-header-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.bp-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.14);
+  color: rgba(255,255,255,0.95);
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease, border-color 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  outline: none;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.bp-btn-primary::-moz-focus-inner {
+  border: 0;
+}
+.bp-btn-primary:hover {
+  background: rgba(52, 211, 153, 0.22);
+  border-color: rgba(52, 211, 153, 0.55);
+}
+.bp-btn-primary:focus {
+  outline: none;
+}
+.bp-btn-primary:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.55);
+  outline-offset: 2px;
+}
+
+/* Buttonin sisäinen tekstipino (pääteksti + pieni alateksti) */
+.bp-btn-text-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+
+.bp-btn-subtext {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+.bp-btn-subtext--primary {
+  color: rgba(255, 255, 255, 0.9);
+}
+.bp-btn-subtext--logout {
+  color: rgba(254, 202, 202, 0.95);
+  opacity: 0.85;
+}
+
+/* Yläpalkin Tallenna — peittävä tausta + leikkaus, ettei gradientti/backdrop vuoda kulmiin */
+.bp-header .bp-btn-primary {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: #14532d;
+  background-image: none;
+  background-clip: padding-box;
+  border-color: rgba(52, 211, 153, 0.45);
+}
+.bp-header .bp-btn-primary:hover {
+  background-color: #166534;
+  border-color: rgba(52, 211, 153, 0.6);
+}
+
+/* Ulos — selvä punainen (ei vain läpinäkyvää punaista tummalla) */
+.bp-btn-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid rgba(248, 113, 113, 0.75);
+  background: #7f1d1d;
+  color: #fecaca;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  outline: none;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.bp-btn-logout::-moz-focus-inner {
+  border: 0;
+}
+.bp-btn-logout:hover {
+  background: #991b1b;
+  border-color: rgba(252, 165, 165, 0.9);
+  color: #fff;
+}
+.bp-btn-logout:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.55);
+  outline-offset: 2px;
+}
+.bp-header .bp-btn-logout {
+  position: relative;
+  z-index: 2;
+}
+
+.bp-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(248, 113, 113, 0.95);
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.bp-btn-danger:hover { background: rgba(248, 113, 113, 0.10); }
+
+.bp-input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--bp-border);
+  background: rgba(255,255,255,0.03);
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+  color: var(--bp-text);
+}
+.bp-input:focus {
+  border-color: rgba(52, 211, 153, 0.55);
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.12);
+}
+
+.bp-tab {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--bp-border);
+  background: rgba(255,255,255,0.03);
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--bp-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.bp-tab:hover {
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.82);
+}
+
+.bp-tab-active {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(52, 211, 153, 0.14);
+  color: rgba(255,255,255,0.95);
+}
+.bp-tab-active:hover {
+  background: rgba(52, 211, 153, 0.22);
+  border-color: rgba(52, 211, 153, 0.75);
+}
+
+/* Päävalikko — sama lasi / gradient kuin pm-korteissa */
+.bp-main-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.bp-main-nav .bp-tab {
+  font-size: 13px;
+  padding: 7px 12px;
+}
+
+/* Tulostaulukon alavälilehdet (Tämä kisa / Kausi) */
+.bp-subtab-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+.bp-subtab-row .bp-tab {
+  font-size: 12px;
+  padding: 6px 11px;
+}
+
+/* Pelaajatori — yksi rivi / kortti + tiheä ruudukko (vähemmän scrollia) */
+.pm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.pm-pelaajatori-team-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  min-width: 0;
+}
+.pm-pelaajatori-team-logo-img.pm-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  flex-shrink: 0;
+}
+.pm-pelaajatori-team-logo-label {
+  margin: 0;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.8);
+}
+.pm-pelaajatori-team-logo-name {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .pm-toolbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+/* Pelaajatori: otsikko + haku rivillä ilman vaakaskrollia */
+@media (min-width: 640px) {
+  .pm-toolbar--market {
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .pm-toolbar--market > div:first-child {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .pm-toolbar--market .pm-input-wrap {
+    flex: 0 1 22rem;
+    width: auto;
+    min-width: 0;
+    max-width: min(22rem, 100%);
+  }
+}
+.pm-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+.pm-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+.pm-input-wrap {
+  width: 100%;
+  max-width: min(22rem, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+}
+.pm-input-wrap .bp-input {
+  padding: 6px 10px;
+  font-size: 13px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pm-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.28rem;
+}
+@media (min-width: 700px) {
+  .pm-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.32rem;
+  }
+}
+@media (min-width: 1100px) {
+  .pm-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem;
+  }
+}
+
+.pm-card {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #34d399;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 6px 4px 8px;
+  min-width: 0;
+}
+
+/* Kortit joissa on useampi rivi (Hall of Fame, historiikki, muiden joukkueet) */
+.pm-card--stack {
+  padding: 10px 12px 12px;
+}
+
+/* Yksi rivi: avatar | nimi | rating + hinta | osta */
+.pm-row-dense {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Oma joukkue: tagit + nappi oikealla, kapealla rivi alas */
+.pm-row-dense-tail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+@media (max-width: 639px) {
+  .pm-row-dense--team {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 8px;
+  }
+  .pm-row-dense--team .pm-row-dense-tail {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+}
+
+.pm-avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.12);
+  font-size: 9px;
+  font-weight: 800;
+  color: #d1fae5;
+}
+
+/* Joukkuelogo (kuva) — täyttää avatar-alueen */
+.pm-avatar--logo {
+  padding: 0;
+  overflow: hidden;
+}
+.pm-avatar--logo img {
+  display: block;
+}
+
+.pm-name {
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-nums {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.pm-tag {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 7px 4px;
+  border-radius: 6px;
+  line-height: 1.15;
+  min-width: 0;
+}
+.pm-tag-label {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.9);
+  line-height: 1.2;
+}
+.pm-tag-label-price {
+  color: rgba(253, 230, 138, 0.85);
+}
+.pm-tag-value {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #a7f3d0;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.pm-tag-rating {
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.12);
+}
+.pm-tag-price {
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+}
+.pm-tag-value-price {
+  color: #fde68a;
+}
+/* Oma joukkue — pisteet (erottuu ratingista) */
+.pm-tag-points {
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  background: rgba(56, 189, 248, 0.1);
+}
+.pm-tag-label-points {
+  color: rgba(125, 211, 252, 0.92);
+}
+.pm-tag-value-points {
+  color: #7dd3fc;
+}
+/* Tulostaulukko — hylkäys */
+.pm-tag-dq {
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  background: rgba(248, 113, 113, 0.12);
+}
+.pm-tag-label-dq {
+  color: rgba(252, 165, 165, 0.95);
+}
+.pm-tag-value-dq {
+  color: #fecaca;
+}
+
+/* Historiikki / sisäiset rivit — pienempi avatar */
+.pm-avatar--sm {
+  width: 22px;
+  height: 22px;
+  font-size: 8px;
+  border-radius: 6px;
+}
+
+.pm-eur-suffix {
+  margin-left: 2px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  opacity: 0.95;
+}
+
+.pm-card .pm-buy {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.pm-card .pm-remove {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+  color: rgba(254, 226, 226, 0.96);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.pm-card .pm-remove:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.55);
+}
+.pm-card .pm-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.pm-picked-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.12);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(167, 243, 208, 0.95);
+}
+
+/* Budjetti-alue (Pelaajatori) */
+.pm-budget-card {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #34d399;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 10px 12px;
+}
+.pm-budget-fill {
+  background: linear-gradient(90deg, #34d399 0%, #10b981 55%, #059669 100%);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.25);
+}
+.pm-budget-fill--over {
+  background: linear-gradient(90deg, #f87171 0%, #ef4444 100%);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.3);
+}
+
+/* Hall of Fame */
+.hof-section {
+  gap: 1rem;
+}
+.hof-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.1) 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(52, 211, 153, 0.08) 100%
+  );
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+.hof-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 80% 60% at 90% 20%,
+    rgba(251, 191, 36, 0.12),
+    transparent 55%
+  );
+}
+.hof-kicker {
+  position: relative;
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(253, 230, 138, 0.85);
+}
+.hof-heading {
+  position: relative;
+  margin: 0.35rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: #fff;
+  text-shadow: 0 2px 20px rgba(251, 191, 36, 0.15);
+}
+.hof-lead {
+  position: relative;
+  margin: 0.5rem 0 0;
+  max-width: 36rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.55);
+}
+.hof-hero-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(
+    165deg,
+    rgba(251, 191, 36, 0.2) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  font-size: 1.75rem;
+  line-height: 1;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+.hof-card {
+  border-left: 3px solid rgba(251, 191, 36, 0.45) !important;
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.02) 55%,
+    rgba(251, 191, 36, 0.04) 100%
+  ) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.hof-card:hover {
+  border-left-color: rgba(253, 224, 71, 0.75) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  transform: translateY(-1px);
+}
+.hof-emoji-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  background: linear-gradient(
+    160deg,
+    rgba(251, 191, 36, 0.16) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.hof-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.hof-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.95);
+}
+.hof-value {
+  margin: 0.4rem 0 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fef3c7;
+}
+.hof-detail {
+  margin: 0.45rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.48);
 }
