@@ -167,7 +167,7 @@ export default function PlayerMarket({
                   </div>
                   {isPicked ? (
                     <div className="pm-row-dense-tail shrink-0">
-                      <span className="rounded-lg border border-white/12 bg-white/[0.04] px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white/55">
+                      <span className="pm-picked-pill">
                         Valittu
                       </span>
                       {!isLocked && (

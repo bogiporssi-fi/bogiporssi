@@ -74,7 +74,9 @@ export default function Home() {
   const [history, setHistory] = useState<any[]>([]);
   
   const [leaderboardTab, setLeaderboardTab] = useState<'tournament' | 'season'>('tournament');
-  const [mainTab, setMainTab] = useState<'market' | 'team' | 'results' | 'hall' | 'history' | 'admin'>('market');
+  const [mainTab, setMainTab] = useState<
+    'market' | 'team' | 'results' | 'hall' | 'rules' | 'history' | 'admin'
+  >('market');
   const [searchTerm, setSearchTerm] = useState('');
   const [adminSearch, setAdminSearch] = useState('');
   const [teamNameInput, setTeamNameInput] = useState('');
@@ -193,7 +195,7 @@ export default function Home() {
           if (player && profile) {
             // Lasketaan pisteet arkistoon
             const par = Number(player.par_score) || 0;
-            const pts = (par < 0 ? Math.abs(par) * 2 : par * -1) + (Number(player.rounds_played) * 2) + (Number(player.hot_rounds) * 5) + (Number(player.hio_count) * 10) + (Number(player.position_bonus) || 0);
+            const pts = (par < 0 ? Math.abs(par) * 2 : par * -1) + (Number(player.rounds_played) * 2) + (Number(player.hot_rounds) * 5) + (Number(player.hio_count) * 30) + (Number(player.position_bonus) || 0);
 
             archiveData.push({
               tournament_name: kisanNimi, // Käytetään oikeaa nimeä
@@ -273,7 +275,7 @@ export default function Home() {
 
   async function saveAdminStats(pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) {
     let scorePoints = par < 0 ? (Math.abs(par) * 2) : (par * -1);
-    const finalPoints = scorePoints + (rounds * 2) + (hot * 5) + (hio * 10) + pos;
+    const finalPoints = scorePoints + (rounds * 2) + (hot * 5) + (hio * 30) + pos;
     await supabase.from('players').update({ par_score: par, rounds_played: rounds, hot_rounds: hot, hio_count: hio, position_bonus: pos, points: finalPoints, official_rating: newRat }).eq('id', pId);
     if (activeTournament?.id) {
       await supabase.from('picks').update({ earned_points: finalPoints }).eq('player_id', pId).eq('tournament_id', activeTournament.id);
@@ -736,10 +738,10 @@ export default function Home() {
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6">
       <header className="bp-header bp-card mb-5 p-5 md:p-6">
         <div className="bp-header-inner flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 flex-1 items-start gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-14">
             <div className="bp-header-logo-wrap">
               <Image
-                src="/logo.svg"
+                src="/logo.png"
                 alt="BogiPörssi"
                 width={40}
                 height={40}
@@ -747,7 +749,7 @@ export default function Home() {
                 priority
               />
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 bp-header-brand-text">
               <div className="bp-header-kicker">BogiPörssi 2026</div>
               <div className="bp-header-title-row mt-1">
                 <h1 className="bp-header-title truncate">
@@ -813,7 +815,7 @@ export default function Home() {
               )}
               <fieldset className="bp-team-logo-fieldset">
                 <legend className="bp-team-logo-legend">Joukkueen logo</legend>
-                <p className="mb-2 text-[11px] leading-snug text-white/45">
+                <p className="bp-team-logo-help">
                   Lataa oma kuva (PNG, JPEG, WebP tai GIF, enintään 2 Mt). Näkyy pelaajatorilla, tuloksissa ja omassa joukkueessa.
                 </p>
                 <input
@@ -824,12 +826,12 @@ export default function Home() {
                   id="team-logo-file"
                   onChange={onTeamLogoFileChange}
                 />
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="bp-team-logo-actions">
                   <button
                     type="button"
                     disabled={uploadingLogo}
                     onClick={() => teamLogoFileRef.current?.click()}
-                    className="bp-btn-primary shrink-0 text-[13px] py-2 px-3"
+                    className="bp-btn-primary text-[14px] py-3 px-3"
                   >
                     {uploadingLogo ? 'Lähetetään…' : 'Valitse kuva'}
                   </button>
@@ -837,7 +839,7 @@ export default function Home() {
                     type="button"
                     disabled={!teamLogoPath || uploadingLogo}
                     onClick={() => removeTeamLogo()}
-                    className="rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2 text-[13px] font-semibold text-white/70 hover:bg-white/[0.1] disabled:pointer-events-none disabled:opacity-35"
+                    className="bp-btn-danger text-[14px] py-3 px-3"
                   >
                     Poista logo
                   </button>
@@ -891,6 +893,12 @@ export default function Home() {
           className={["bp-tab", mainTab === 'hall' ? "bp-tab-active" : ""].join(" ")}
         >
           Hall of Fame
+        </button>
+        <button
+          onClick={() => setMainTab('rules')}
+          className={["bp-tab", mainTab === 'rules' ? "bp-tab-active" : ""].join(" ")}
+        >
+          Säännöt
         </button>
         <button
           onClick={() => setMainTab('history')}
@@ -972,6 +980,61 @@ export default function Home() {
 
       {mainTab === 'hall' && (
         <HallOfFame items={hallOfFameItems} />
+      )}
+
+      {mainTab === 'rules' && (
+        <section className="pm-section">
+          <div className="pm-toolbar">
+            <div>
+              <h2 className="pm-title">Pelinsäännöt</h2>
+              <p className="pm-sub">Kilpailun säännöt ja pisteytys.</p>
+            </div>
+          </div>
+
+          <div className="pm-grid">
+            <div className="col-span-full pm-card pm-card--stack">
+              <div className="space-y-2 text-sm leading-relaxed text-white/70">
+                <h3 className="pm-title !m-0 !text-base">Kilpailun Säännöt ja Pisteytys</h3>
+
+                <div className="space-y-2">
+                  <div>
+                    <div className="font-extrabold text-white/85">Joukkueen rakenne</div>
+                    <ul className="mt-1 list-disc pl-5">
+                      <li>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</li>
+                      <li>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-extrabold text-white/85">Heittokohtainen pisteytys</div>
+                    <ul className="mt-1 list-disc pl-5">
+                      <li>Miinusheitot (-): Jokainen alle parin heitetty reikä (birdie, eagle jne.) tuo 2 pistettä.</li>
+                      <li>Plusheitot (+): Jokainen yli parin heitetty reikä (bogey, double bogey jne.) tuo -1 pisteen.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-extrabold text-white/85">Kierros- ja suorituspisteet</div>
+                    <ul className="mt-1 list-disc pl-5">
+                      <li>Pelikierrokset: Jokainen pelattu kierros tuo 2 pistettä. (Esim. cutista selviäminen tuo automaattisesti lisäpisteitä pelattujen kierrosten mukaan).</li>
+                      <li>Hot Round: Kierroksen parhaasta tuloksesta palkitaan 5 pisteellä.</li>
+                      <li>Hole-in-One: Holarista pelaaja kuittaa <span className="font-extrabold text-white/90">30</span> pistettä.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-extrabold text-white/85">Sijoitusbonukset</div>
+                    <ul className="mt-1 list-disc pl-5">
+                      <li>1. sija: 10 pistettä</li>
+                      <li>2.–3. sijat: 5 pistettä</li>
+                      <li>4.–10. sijat: 2 pistettä</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       {mainTab === 'history' && (
