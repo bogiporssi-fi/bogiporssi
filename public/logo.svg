@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+  <title>BogiP�rssi</title>
+  <rect width="48" height="48" rx="14" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.45)" stroke-width="1"/>
+  <path d="M24 12c-6.6 0-12 4.5-12 10 0 4.2 3.2 7.8 7.5 9.2L24 40l4.5-8.8c4.3-1.4 7.5-5 7.5-9.2 0-5.5-5.4-10-12-10z" fill="rgba(52,211,153,0.25)" stroke="rgba(167,243,208,0.5)" stroke-width="1"/>
+  <text x="24" y="29" text-anchor="middle" fill="#d1fae5" font-family="system-ui,Segoe UI,sans-serif" font-size="13" font-weight="800" letter-spacing="-0.02em">BP</text>
+</svg>
