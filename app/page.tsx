@@ -993,105 +993,73 @@ export default function Home() {
 
           <div className="pm-grid">
             <div className="col-span-full">
-              <div className="space-y-3">
-                <details className="pm-card pm-card--stack group">
-                  <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-                    <div className="pm-row-dense">
-                      <span className="pm-avatar" aria-hidden>
-                        👥
-                      </span>
-                      <h3 className="pm-name">Joukkueen rakenne</h3>
-                      <span
-                        className="text-xs text-white/30 transition-transform duration-200 group-open:rotate-180"
-                        aria-hidden
-                      >
-                        ▼
-                      </span>
-                    </div>
-                  </summary>
-                  <div className="mt-3 space-y-2 text-sm leading-relaxed text-white/70">
-                    <div>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</div>
-                    <div>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</div>
+              <div className="space-y-4">
+                <article className="pm-card pm-card--stack">
+                  <div className="pm-row-dense">
+                    <span className="pm-avatar" aria-hidden>
+                      👥
+                    </span>
+                    <h3 className="pm-name">Joukkueen rakenne</h3>
                   </div>
-                </details>
+                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                    <li>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</li>
+                    <li>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</li>
+                  </ul>
+                </article>
 
-                <details className="pm-card pm-card--stack group">
-                  <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-                    <div className="pm-row-dense">
-                      <span className="pm-avatar" aria-hidden>
-                        🎯
-                      </span>
-                      <h3 className="pm-name">Heittokohtainen pisteytys</h3>
-                      <span
-                        className="text-xs text-white/30 transition-transform duration-200 group-open:rotate-180"
-                        aria-hidden
-                      >
-                        ▼
-                      </span>
-                    </div>
-                  </summary>
-                  <div className="mt-3 space-y-2 text-sm leading-relaxed text-white/70">
-                    <div>
+                <article className="pm-card pm-card--stack">
+                  <div className="pm-row-dense">
+                    <span className="pm-avatar" aria-hidden>
+                      🎯
+                    </span>
+                    <h3 className="pm-name">Heittokohtainen pisteytys</h3>
+                  </div>
+                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                    <li>
                       <span className="font-extrabold text-white/90">Miinusheitot (-):</span> Jokainen heitto alle parin tuo 2 pistettä.
                       (Esim. Birdie = 2p, Eagle = 4p).
-                    </div>
-                    <div>
+                    </li>
+                    <li>
                       <span className="font-extrabold text-white/90">Plusheitot (+):</span> Jokainen heitto yli parin tuo -1 pistettä.
                       (Esim. Bogey = -1p, Tuplabogey = -2p).
-                    </div>
-                  </div>
-                </details>
+                    </li>
+                  </ul>
+                </article>
 
-                <details className="pm-card pm-card--stack group">
-                  <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-                    <div className="pm-row-dense">
-                      <span className="pm-avatar" aria-hidden>
-                        ⛳
-                      </span>
-                      <h3 className="pm-name">Kierros- ja suorituspisteet</h3>
-                      <span
-                        className="text-xs text-white/30 transition-transform duration-200 group-open:rotate-180"
-                        aria-hidden
-                      >
-                        ▼
-                      </span>
-                    </div>
-                  </summary>
-                  <div className="mt-3 space-y-2 text-sm leading-relaxed text-white/70">
-                    <div>
+                <article className="pm-card pm-card--stack">
+                  <div className="pm-row-dense">
+                    <span className="pm-avatar" aria-hidden>
+                      ⛳
+                    </span>
+                    <h3 className="pm-name">Kierros- ja suorituspisteet</h3>
+                  </div>
+                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                    <li>
                       <span className="font-extrabold text-white/90">Pelikierrokset:</span> Jokainen pelattu kierros tuo 2 pistettä. (Esim.
                       cutista selviäminen kerryttää pistepottia).
-                    </div>
-                    <div>
+                    </li>
+                    <li>
                       <span className="font-extrabold text-white/90">Hot Round:</span> Kierroksen parhaasta tuloksesta palkitaan 5 pisteellä.
-                    </div>
-                    <div>
+                    </li>
+                    <li>
                       <span className="font-extrabold text-white/90">Hole-in-One:</span> Holarista pelaaja kuittaa 30 pistettä.
-                    </div>
-                  </div>
-                </details>
+                    </li>
+                  </ul>
+                </article>
 
-                <details className="pm-card pm-card--stack group">
-                  <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-                    <div className="pm-row-dense">
-                      <span className="pm-avatar" aria-hidden>
-                        🏆
-                      </span>
-                      <h3 className="pm-name">Sijoitusbonukset</h3>
-                      <span
-                        className="text-xs text-white/30 transition-transform duration-200 group-open:rotate-180"
-                        aria-hidden
-                      >
-                        ▼
-                      </span>
-                    </div>
-                  </summary>
-                  <div className="mt-3 space-y-2 text-sm leading-relaxed text-white/70">
-                    <div>1. sija: 10 pistettä</div>
-                    <div>2.–3. sijat: 5 pistettä</div>
-                    <div>4.–10. sijat: 2 pistettä</div>
+                <article className="pm-card pm-card--stack">
+                  <div className="pm-row-dense">
+                    <span className="pm-avatar" aria-hidden>
+                      🏆
+                    </span>
+                    <h3 className="pm-name">Sijoitusbonukset</h3>
                   </div>
-                </details>
+                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                    <li>1. sija: 10 pistettä</li>
+                    <li>2.–3. sijat: 5 pistettä</li>
+                    <li>4.–10. sijat: 2 pistettä</li>
+                  </ul>
+                </article>
               </div>
             </div>
           </div>
