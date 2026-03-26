@@ -201,6 +201,7 @@ export default function Home() {
               tournament_name: kisanNimi, // Käytetään oikeaa nimeä
               manager_name: profile.full_name || 'Tuntematon',
               team_name: profile.team_name || 'Nimetön tiimi',
+              user_id: pick.user_id,
               player_name: player.name,
               player_score: player.par_score,
               player_rounds: player.rounds_played,
@@ -210,22 +211,24 @@ export default function Home() {
           }
         });
         if (archiveData.length > 0) {
-          const { error: archiveErr } = await supabase.from('tournament_results').insert(archiveData);
-          // Jos buy_price-sarake ei ole vielä tietokannassa, tiputetaan kenttä ja yritetään uudestaan.
-          if (archiveErr) {
-            const msg = archiveErr.message || '';
-            const maybeMissingColumn =
-              msg.toLowerCase().includes('buy_price') &&
-              (msg.toLowerCase().includes('column') || msg.toLowerCase().includes('schema') || msg.toLowerCase().includes('not exist'));
-
-            if (maybeMissingColumn) {
-              const withoutBuyPrice = archiveData.map(({ buy_price, ...rest }) => rest);
-              const { error: retryErr } = await supabase.from('tournament_results').insert(withoutBuyPrice);
-              if (retryErr) throw retryErr;
-            } else {
-              throw archiveErr;
-            }
+          const missingColumnErr = (err: { message?: string } | null, col: string) => {
+            const m = (err?.message || '').toLowerCase();
+            return (
+              m.includes(col) &&
+              (m.includes('column') || m.includes('schema') || m.includes('not exist'))
+            );
+          };
+          let batch: any[] = archiveData;
+          let insErr = (await supabase.from('tournament_results').insert(batch)).error;
+          if (insErr && missingColumnErr(insErr, 'user_id')) {
+            batch = batch.map(({ user_id, ...rest }) => rest);
+            insErr = (await supabase.from('tournament_results').insert(batch)).error;
           }
+          if (insErr && missingColumnErr(insErr, 'buy_price')) {
+            batch = batch.map(({ buy_price, ...rest }) => rest);
+            insErr = (await supabase.from('tournament_results').insert(batch)).error;
+          }
+          if (insErr) throw insErr;
         }
       }
 
@@ -529,26 +532,37 @@ export default function Home() {
   })();
 
   const seasonBoard = (() => {
-    /** Kausi = kaikkien arkistoitujen kisojen pisteet tiimin nimellä + tämänhetkisen kisan pisteet. */
+    /**
+     * Kausi = arkistoidut kisat + tämänhetkisen kisan pisteet.
+     * Avain: profiles.id (uuid), jotta nimen vaihto ei jaa pisteitä.
+     * Vanhat rivit ilman user_id: legacy:team_name (sama kuin ennen migraatiota).
+     */
+    const LEGACY_PREFIX = 'legacy:';
+    const stableKeyFromHistoryRow = (row: any) => {
+      const uid = row.user_id as string | undefined;
+      if (uid && typeof uid === 'string') return uid;
+      return `${LEGACY_PREFIX}${row.team_name || 'Nimetön tiimi'}`;
+    };
+
     const totals = new Map<string, number>();
     const pointsByTeamAndTournament = new Map<string, Map<string, number>>();
     const tournamentOrder: string[] = [];
     const seenTournaments = new Set<string>();
 
-    const addTeamTournamentPts = (teamName: string, tournamentName: string, pts: number) => {
-      if (!pointsByTeamAndTournament.has(teamName)) pointsByTeamAndTournament.set(teamName, new Map());
-      const m = pointsByTeamAndTournament.get(teamName)!;
+    const addTeamTournamentPts = (teamKey: string, tournamentName: string, pts: number) => {
+      if (!pointsByTeamAndTournament.has(teamKey)) pointsByTeamAndTournament.set(teamKey, new Map());
+      const m = pointsByTeamAndTournament.get(teamKey)!;
       m.set(tournamentName, (m.get(tournamentName) || 0) + pts);
-      totals.set(teamName, (totals.get(teamName) || 0) + pts);
+      totals.set(teamKey, (totals.get(teamKey) || 0) + pts);
     };
 
     // 1) Arkistoidut kisat (history sisältää jo earned_points per pelaaja/tiimi)
     history.forEach((row: any) => {
-      const teamName = row.team_name || 'Nimetön tiimi';
+      const teamKey = stableKeyFromHistoryRow(row);
       const tournamentName = row.tournament_name || 'Tuntematon turnaus';
       const pts = Number(row.earned_points) || 0;
 
-      addTeamTournamentPts(teamName, tournamentName, pts);
+      addTeamTournamentPts(teamKey, tournamentName, pts);
 
       if (!seenTournaments.has(tournamentName)) {
         seenTournaments.add(tournamentName);
@@ -559,7 +573,6 @@ export default function Home() {
     // 2) Tämänhetkinen aktiivinen kisa (allTeamsPicks = aktiivisen kisan picks)
     const activeTournamentName = activeTournament?.name || 'Aktiivinen kisa';
     if (!seenTournaments.has(activeTournamentName)) {
-      // Aktiivinen kisa mieluummin ensin erittelyssä
       seenTournaments.add(activeTournamentName);
       tournamentOrder.unshift(activeTournamentName);
     }
@@ -568,19 +581,23 @@ export default function Home() {
       const uid = pick.user_id;
       if (!uid) return;
 
-      const teamName = getTeamDisplayNameByUid(uid);
       const pts = getPickPoints(pick);
-      addTeamTournamentPts(teamName, activeTournamentName, pts);
+      addTeamTournamentPts(uid, activeTournamentName, pts);
     });
 
     return Array.from(totals.entries())
-      .map(([name, pts]) => {
-        const m = pointsByTeamAndTournament.get(name) || new Map<string, number>();
+      .map(([key, pts]) => {
+        const m = pointsByTeamAndTournament.get(key) || new Map<string, number>();
         const tournamentLines = tournamentOrder
           .map((tName) => ({ tournamentName: tName, points: m.get(tName) || 0 }))
           .filter((line) => line.points !== 0);
 
+        const isLegacy = key.startsWith(LEGACY_PREFIX);
+        const name = isLegacy ? key.slice(LEGACY_PREFIX.length) : getTeamDisplayNameByUid(key);
+        const uid = isLegacy ? undefined : key;
+
         return {
+          uid,
           name,
           pts,
           tournamentLines,
@@ -886,7 +903,7 @@ export default function Home() {
 
       {mainTab === 'team' && (
         <section className="pm-section">
-          <div className="pm-card pm-card--stack mb-2">
+          <div className="pm-card pm-card--stack bp-team-settings-card mb-2">
             <div className="pm-row-dense mb-3">
               <TeamLogo
                 logoPath={teamLogoPath}
@@ -899,9 +916,9 @@ export default function Home() {
                 <p className="pm-sub">Muokkaa joukkueen nimeä ja logoa.</p>
               </div>
             </div>
-            <div className="space-y-3">
-              <div>
-                <label htmlFor="team-name-input" className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">
+            <div className="space-y-5">
+              <div className="pt-1">
+                <label htmlFor="team-name-input" className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/55">
                   Joukkueen nimi
                 </label>
                 <div className="mt-1 flex flex-col gap-2 sm:flex-row">
@@ -916,7 +933,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => updateTeamName(teamNameInput)}
-                    className="bp-btn-primary text-[13px] px-4 py-2"
+                    className="bp-btn-primary bp-btn-primary--stacked text-[13px] px-4"
                   >
                     <span className="bp-btn-text-stack">
                       <span>Tallenna</span>
@@ -928,8 +945,14 @@ export default function Home() {
                 </div>
               </div>
 
-              <fieldset className="bp-team-logo-fieldset">
-                <legend className="bp-team-logo-legend">Joukkueen logo</legend>
+              <div
+                role="group"
+                aria-labelledby="team-logo-heading"
+                className="bp-team-logo-fieldset"
+              >
+                <h3 id="team-logo-heading" className="bp-team-logo-legend">
+                  Joukkueen logo
+                </h3>
                 <p className="bp-team-logo-help">
                   Lataa oma kuva (PNG, JPEG, WebP tai GIF, enintään 2 Mt). Näkyy pelaajatorilla, tuloksissa ja omassa joukkueessa.
                 </p>
@@ -973,7 +996,7 @@ export default function Home() {
                     Poista logo
                   </button>
                 </div>
-              </fieldset>
+              </div>
             </div>
           </div>
 

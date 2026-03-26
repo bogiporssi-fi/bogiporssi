@@ -36,7 +36,8 @@ function initials(name: string) {
 }
 
 function resolveEntryUid(entry: BoardEntry, tab: "tournament" | "season", profiles: any[]): string | undefined {
-  if (tab === "tournament") return entry.uid;
+  if (entry.uid) return entry.uid;
+  if (tab === "tournament") return undefined;
   const n = entry.name;
   if (!n) return undefined;
   return profiles.find((p: any) => p.team_name === n)?.id;
