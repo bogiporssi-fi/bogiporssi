@@ -1,5 +1,5 @@
 "use client";
-import React from 'react';
+import React, { useRef } from 'react';
 
 interface AdminPanelProps {
   activeTournament: any;
@@ -7,6 +7,7 @@ interface AdminPanelProps {
   adminSearch: string;
   setAdminSearch: (val: string) => void;
   handleRatingImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  importResultsFromCsvFile: (file: File) => void | Promise<void>;
   startNewTournament: () => void;
   toggleTournamentLock: () => void;
   updateTournamentName: (newName: string) => void;
@@ -15,9 +16,10 @@ interface AdminPanelProps {
 
 export default function AdminPanel({
   activeTournament, players, adminSearch, setAdminSearch, 
-  handleRatingImport, startNewTournament, toggleTournamentLock, 
+  handleRatingImport, importResultsFromCsvFile, startNewTournament, toggleTournamentLock, 
   saveAdminStats, updateTournamentName
 }: AdminPanelProps) {
+  const resultsCsvRef = useRef<HTMLInputElement>(null);
   
   const styles = {
     container: {
@@ -464,6 +466,53 @@ export default function AdminPanel({
           placeholder="Kirjoita kisan nimi tähän (esim. Hämeenlinna Open 2026)..."
           className="bp-input"
         />
+      </div>
+
+      {/* Tulosten tuonti CSV (Excel → Tallenna nimellä CSV UTF-8) */}
+      <div style={styles.tournamentNameBox}>
+        <div style={styles.labelRow}>
+          <div style={styles.dot('#34d399')} />
+          <label style={styles.label}>Tulosten tuonti (CSV)</label>
+        </div>
+        <p style={{ margin: '0 0 12px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+          Excelissä paras: <strong style={{ color: 'rgba(255,255,255,0.85)' }}>Tallenna nimellä → CSV UTF-8</strong>.
+          Tuonti yrittää myös lukea Windows Excelin tavallisen ANSI/CSV-koodauksen (Väinö, Semerád jne.).
+          Erotin: puolipiste tai pilkku; tab-taulukko käy.
+          Otsikkorivi ja sarakkeet (nimet isolla/pienellä):{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>
+            Pelaaja;Tulos;Kierrokset;Hot;HIO;Sija
+          </span>
+          . Valinnainen: <span style={{ fontFamily: 'ui-monospace, monospace' }}>Rating</span>.{' '}
+          Sija: <span style={{ fontFamily: 'ui-monospace, monospace' }}>1.</span> / <span style={{ fontFamily: 'ui-monospace, monospace' }}>2.</span> /{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>T10</span> tai suora bonus{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>10</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>5</span>,{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>2</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>0</span>.
+          Tuonti <strong style={{ color: 'rgba(255,255,255,0.85)' }}>ylikirjoittaa</strong> samat kentät kuin rivin Tallenna-nappi.
+        </p>
+        <input
+          ref={resultsCsvRef}
+          type="file"
+          accept=".csv,.txt,text/csv"
+          id="results-csv-upload"
+          className="sr-only"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f) return;
+            await importResultsFromCsvFile(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => resultsCsvRef.current?.click()}
+          className="bp-btn-primary"
+          style={{ marginRight: '10px' }}
+        >
+          Valitse tulos-CSV…
+        </button>
+        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+          Manuaalinen syöttö taulukossa säilyy.
+        </span>
       </div>
       
       {/* Search Input */}

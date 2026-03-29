@@ -95,89 +95,32 @@ body {
   line-height: 1.2;
   color: #ffffff;
 }
-
-.bp-header-brand-text {
-  /* Tuo bränditekstit selvästi kauemmas logon reunasta */
-  padding-left: 16px;
-}
 .bp-header-actions {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-/* Oma joukkue — asetuskortti (ei vaikuta muihin pm-card--stack -kortteihin) */
-.bp-team-settings-card.pm-card--stack {
-  padding: 14px 14px 16px;
-}
-
-/* Joukkuelogon valinta (Oma joukkue / aiemmin yläpalkki) */
+/* Joukkuelogon valinta (yläpalkki) */
 .bp-team-logo-fieldset {
   margin: 0;
-  padding: 0.85rem 0.9rem 0.95rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  background: linear-gradient(
-    160deg,
-    rgba(255, 255, 255, 0.06) 0%,
-    rgba(255, 255, 255, 0.02) 100%
-  );
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  padding: 0;
+  border: none;
   min-width: 0;
 }
 .bp-team-logo-legend {
-  margin: 0 0 0.5rem;
-  padding: 0;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(167, 243, 208, 0.9);
-  line-height: 1.35;
-}
-.bp-team-logo-help {
-  margin: 0 0 0.75rem;
-  font-size: 11px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.55);
-}
-.bp-team-logo-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-.bp-team-logo-actions .bp-btn-primary,
-.bp-team-logo-actions .bp-btn-danger {
-  width: 100%;
-  min-height: 52px;
-}
-.bp-btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  border: 1px solid rgba(248, 113, 113, 0.55);
-  background: rgba(248, 113, 113, 0.14);
-  font-weight: 700;
-  color: rgba(254, 226, 226, 0.96);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-}
-.bp-btn-danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.22);
-  border-color: rgba(248, 113, 113, 0.7);
-}
-.bp-btn-danger:disabled {
-  pointer-events: none;
-  opacity: 0.35;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 6px;
 }
 .bp-team-logo-preview {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.65rem 0.85rem;
+  padding: 0.5rem 0.75rem;
   margin-bottom: 0.35rem;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -294,20 +237,6 @@ body {
   align-items: center;
   justify-content: center;
   line-height: 1.05;
-}
-
-/* Kaksrivinen Tallenna (Oma joukkue) — ei liian tiukka pystysuunnassa */
-.bp-btn-primary.bp-btn-primary--stacked {
-  min-height: 52px;
-  padding: 0.65rem 1rem;
-  align-items: center;
-  justify-content: center;
-}
-.bp-btn-primary.bp-btn-primary--stacked .bp-btn-text-stack {
-  line-height: 1.22;
-}
-.bp-btn-primary.bp-btn-primary--stacked .bp-btn-subtext {
-  margin-top: 4px;
 }
 
 .bp-btn-subtext {
@@ -699,8 +628,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 5px 9px 6px;
+  gap: 4px;
+  padding: 3px 7px 4px;
   border-radius: 6px;
   line-height: 1.15;
   min-width: 0;
@@ -783,7 +712,7 @@ body {
 
 .pm-card .pm-remove {
   flex-shrink: 0;
-  padding: 7px 12px;
+  padding: 5px 10px;
   font-size: 12px;
   font-weight: 700;
   border-radius: 10px;
@@ -800,20 +729,6 @@ body {
 .pm-card .pm-remove:disabled {
   cursor: not-allowed;
   opacity: 0.45;
-}
-.pm-picked-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  background: rgba(52, 211, 153, 0.12);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(167, 243, 208, 0.95);
 }
 
 /* Budjetti-alue (Pelaajatori) */

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { isRefreshTokenAuthError, recoverFromStaleSupabaseAuth, supabase } from '../lib/supabase';
 import AdminPanel from './components/AdminPanel';
 import PlayerMarket from './components/PlayerMarket';
 import UserTeam from './components/UserTeam';
@@ -10,6 +10,7 @@ import Leaderboards from './components/Leaderboards';
 import HallOfFame from './components/HallOfFame';
 import TeamLogo from './components/TeamLogo';
 import { parseTeamLogoId } from '../lib/teamLogos';
+import { decodeAndParseResultsCsv } from '../lib/csvResultImport';
 
 // ADMIN-TUNNUS
 const ADMIN_EMAIL = 'kimmo@gmail.com';
@@ -89,16 +90,25 @@ export default function Home() {
 
   // --- KIRJAUTUMISEN SEURANTA ---
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let cancelled = false;
+
+    void (async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (error && isRefreshTokenAuthError(error)) {
+        await recoverFromStaleSupabaseAuth();
+        if (cancelled) return;
+        setUser(null);
+        setLoading(false);
+        return;
+      }
       setUser(session?.user ?? null);
       if (session?.user) {
         loadData();
       } else {
-        // Jos käyttäjää ei ole kirjautuneena, ei koskaan käynnistetä loadData():a.
-        // Siksi laitetaan loading=false, ettei jää jumiin “Ladataan BogiPörssiä…”.
         setLoading(false);
       }
-    });
+    })();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -109,7 +119,10 @@ export default function Home() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // --- TIEDON HAKU (Load Data) ---
@@ -148,7 +161,12 @@ export default function Home() {
       setAllTeamsPicks(allPicksWithPlayers);
 
       // 4. Asetetaan oma joukkue
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr && isRefreshTokenAuthError(sessionErr)) {
+        await recoverFromStaleSupabaseAuth();
+        setUser(null);
+        return;
+      }
       const myId = session?.user?.id;
       
       if (myId) {
@@ -276,14 +294,86 @@ export default function Home() {
     reader.readAsText(file, 'windows-1252');
   }
 
-  async function saveAdminStats(pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) {
-    let scorePoints = par < 0 ? (Math.abs(par) * 2) : (par * -1);
-    const finalPoints = scorePoints + (rounds * 2) + (hot * 5) + (hio * 30) + pos;
-    await supabase.from('players').update({ par_score: par, rounds_played: rounds, hot_rounds: hot, hio_count: hio, position_bonus: pos, points: finalPoints, official_rating: newRat }).eq('id', pId);
+  async function persistPlayerStats(
+    pId: string,
+    par: number,
+    rounds: number,
+    hot: number,
+    hio: number,
+    pos: number,
+    newRat: number,
+    options?: { skipLoadData?: boolean }
+  ): Promise<{ ok: boolean; message?: string }> {
+    const scorePoints = par < 0 ? Math.abs(par) * 2 : par * -1;
+    const finalPoints = scorePoints + rounds * 2 + hot * 5 + hio * 30 + pos;
+    const { error: e1 } = await supabase
+      .from('players')
+      .update({
+        par_score: par,
+        rounds_played: rounds,
+        hot_rounds: hot,
+        hio_count: hio,
+        position_bonus: pos,
+        points: finalPoints,
+        official_rating: newRat,
+      })
+      .eq('id', pId);
+    if (e1) return { ok: false, message: formatSupabaseErr(e1) };
     if (activeTournament?.id) {
-      await supabase.from('picks').update({ earned_points: finalPoints }).eq('player_id', pId).eq('tournament_id', activeTournament.id);
+      const { error: e2 } = await supabase
+        .from('picks')
+        .update({ earned_points: finalPoints })
+        .eq('player_id', pId)
+        .eq('tournament_id', activeTournament.id);
+      if (e2) return { ok: false, message: formatSupabaseErr(e2) };
     }
-    loadData();
+    if (!options?.skipLoadData) loadData();
+    return { ok: true };
+  }
+
+  async function saveAdminStats(pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) {
+    const r = await persistPlayerStats(pId, par, rounds, hot, hio, pos, newRat);
+    if (!r.ok) {
+      alert('Tallennus epäonnistui: ' + (r.message || 'tuntematon virhe'));
+    }
+  }
+
+  async function importResultsFromCsvFile(file: File) {
+    const buf = await file.arrayBuffer();
+    const active = players.filter((p) => p.is_active);
+    const { updates, unknownNames, parseWarnings, decodingUsed } = decodeAndParseResultsCsv(buf, active);
+    if (parseWarnings.length > 0) {
+      alert(parseWarnings.join('\n'));
+      return;
+    }
+    if (updates.length === 0 && unknownNames.length === 0) {
+      alert('Ei yhtään päivitettävää riviä.');
+      return;
+    }
+    let ok = 0;
+    let firstErr: string | undefined;
+    for (const u of updates) {
+      const r = await persistPlayerStats(u.playerId, u.par, u.rounds, u.hot, u.hio, u.pos, u.official_rating, {
+        skipLoadData: true,
+      });
+      if (r.ok) ok += 1;
+      else if (!firstErr) firstErr = r.message;
+    }
+    await loadData();
+    const unk =
+      unknownNames.length > 0
+        ? `\n\nTuntemattomat nimet (${unknownNames.length}): ${unknownNames.slice(0, 15).join(', ')}${unknownNames.length > 15 ? '…' : ''}`
+        : '';
+    const err = firstErr ? `\n\nVirheitä tallennuksessa: ${firstErr}` : '';
+    const encHint =
+      unknownNames.length > 0
+        ? decodingUsed !== 'utf-8'
+          ? `\n\nTiedosto tulkitaan koodauksella ${decodingUsed} (Windows Excel usein). Jos nimet ovat pielessä, tallenna CSV UTF-8.`
+          : '\n\nTarkista että nimet täsmäävät BogiPörssiin (ääkköset, välilyönnit).'
+        : decodingUsed !== 'utf-8'
+          ? `\n\nLuettu: ${decodingUsed}.`
+          : '';
+    alert(`Tuonti valmis.\nPäivitetty: ${ok} pelaajaa.${unk}${err}${encHint}`);
   }
 
   async function toggleTournamentLock() {
@@ -878,6 +968,7 @@ export default function Home() {
           adminSearch={adminSearch}
           setAdminSearch={setAdminSearch}
           handleRatingImport={handleRatingImport}
+          importResultsFromCsvFile={importResultsFromCsvFile}
           startNewTournament={startNewTournament}
           toggleTournamentLock={toggleTournamentLock}
           saveAdminStats={saveAdminStats}
