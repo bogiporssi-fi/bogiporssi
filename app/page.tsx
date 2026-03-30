@@ -11,6 +11,8 @@ import HallOfFame from './components/HallOfFame';
 import TeamLogo from './components/TeamLogo';
 import { parseTeamLogoId } from '../lib/teamLogos';
 import { decodeAndParseResultsCsv } from '../lib/csvResultImport';
+import type { RoundBreakdownStored } from '../lib/roundBreakdown';
+import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
 
 // ADMIN-TUNNUS
 const ADMIN_EMAIL = 'kimmo@gmail.com';
@@ -20,6 +22,10 @@ const getPrice = (rating: number) => {
   const diff = rating - 950;
   return diff > 0 ? diff * 2600 : 0;
 };
+
+function formatMoneyFi(n: number) {
+  return n.toLocaleString('fi-FI').replace(/\s/g, '\u00A0');
+}
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -75,6 +81,7 @@ export default function Home() {
   const [history, setHistory] = useState<any[]>([]);
   
   const [leaderboardTab, setLeaderboardTab] = useState<'tournament' | 'season'>('tournament');
+  const [resultsBoard, setResultsBoard] = useState<'teams' | 'players'>('teams');
   const [mainTab, setMainTab] = useState<
     'market' | 'team' | 'results' | 'hall' | 'rules' | 'history' | 'admin'
   >('market');
@@ -251,7 +258,18 @@ export default function Home() {
       }
 
       // Nollataan pelaajien tiedot ja poistetaan valinnat
-      await supabase.from('players').update({ points: 0, par_score: 0, rounds_played: 0, hot_rounds: 0, hio_count: 0, position_bonus: 0 }).neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase
+        .from('players')
+        .update({
+          points: 0,
+          par_score: 0,
+          rounds_played: 0,
+          hot_rounds: 0,
+          hio_count: 0,
+          position_bonus: 0,
+          round_breakdown: null,
+        })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('picks').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       
       // Palautetaan turnauksen nimi alkutilaan
@@ -266,6 +284,18 @@ export default function Home() {
     if (!activeTournament) return;
     await supabase.from('tournaments').update({ name: newName }).eq('id', activeTournament.id);
     setActiveTournament({ ...activeTournament, name: newName });
+  }
+
+  async function updateTournamentRoundParStrokes(value: number | null) {
+    if (!activeTournament?.id) return;
+    const payload =
+      value != null && Number.isFinite(value) && value > 0 ? { round_par_strokes: Math.round(value) } : { round_par_strokes: null };
+    const { error } = await supabase.from('tournaments').update(payload).eq('id', activeTournament.id);
+    if (error) {
+      alert('Kierroksen par -tallennus epäonnistui: ' + formatSupabaseErr(error));
+      return;
+    }
+    setActiveTournament({ ...activeTournament, round_par_strokes: payload.round_par_strokes });
   }
 
   async function handleRatingImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -302,22 +332,23 @@ export default function Home() {
     hio: number,
     pos: number,
     newRat: number,
-    options?: { skipLoadData?: boolean }
+    options?: { skipLoadData?: boolean; roundBreakdown?: RoundBreakdownStored | null }
   ): Promise<{ ok: boolean; message?: string }> {
     const scorePoints = par < 0 ? Math.abs(par) * 2 : par * -1;
     const finalPoints = scorePoints + rounds * 2 + hot * 5 + hio * 30 + pos;
-    const { error: e1 } = await supabase
-      .from('players')
-      .update({
-        par_score: par,
-        rounds_played: rounds,
-        hot_rounds: hot,
-        hio_count: hio,
-        position_bonus: pos,
-        points: finalPoints,
-        official_rating: newRat,
-      })
-      .eq('id', pId);
+    const payload: Record<string, unknown> = {
+      par_score: par,
+      rounds_played: rounds,
+      hot_rounds: hot,
+      hio_count: hio,
+      position_bonus: pos,
+      points: finalPoints,
+      official_rating: newRat,
+    };
+    if (options?.roundBreakdown !== undefined) {
+      payload.round_breakdown = options.roundBreakdown;
+    }
+    const { error: e1 } = await supabase.from('players').update(payload).eq('id', pId);
     if (e1) return { ok: false, message: formatSupabaseErr(e1) };
     if (activeTournament?.id) {
       const { error: e2 } = await supabase
@@ -332,7 +363,7 @@ export default function Home() {
   }
 
   async function saveAdminStats(pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) {
-    const r = await persistPlayerStats(pId, par, rounds, hot, hio, pos, newRat);
+    const r = await persistPlayerStats(pId, par, rounds, hot, hio, pos, newRat, { roundBreakdown: null });
     if (!r.ok) {
       alert('Tallennus epäonnistui: ' + (r.message || 'tuntematon virhe'));
     }
@@ -341,7 +372,12 @@ export default function Home() {
   async function importResultsFromCsvFile(file: File) {
     const buf = await file.arrayBuffer();
     const active = players.filter((p) => p.is_active);
-    const { updates, unknownNames, parseWarnings, decodingUsed } = decodeAndParseResultsCsv(buf, active);
+    const rps = activeTournament?.round_par_strokes;
+    const roundParStrokes =
+      rps != null && Number.isFinite(Number(rps)) && Number(rps) > 0 ? Number(rps) : null;
+    const { updates, unknownNames, parseWarnings, decodingUsed } = decodeAndParseResultsCsv(buf, active, {
+      roundParStrokes,
+    });
     if (parseWarnings.length > 0) {
       alert(parseWarnings.join('\n'));
       return;
@@ -355,6 +391,7 @@ export default function Home() {
     for (const u of updates) {
       const r = await persistPlayerStats(u.playerId, u.par, u.rounds, u.hot, u.hio, u.pos, u.official_rating, {
         skipLoadData: true,
+        roundBreakdown: u.roundBreakdown,
       });
       if (r.ok) ok += 1;
       else if (!firstErr) firstErr = r.message;
@@ -598,6 +635,10 @@ export default function Home() {
     return Number(pick?.players?.points) || 0;
   };
 
+  const activeTournamentNameForStats = activeTournament?.name || 'Aktiivinen kisa';
+  const playerTournamentRows = buildPlayerTournamentRows(players);
+  const playerSeasonRows = buildPlayerSeasonRows(history, players, activeTournamentNameForStats);
+
   const tournamentBoard = (() => {
     const totals = new Map<string, number>();
     const lineups = new Map<string, Array<{ playerName: string; points: number }>>();
@@ -705,18 +746,54 @@ export default function Home() {
       return pr?.team_name || pr?.email?.split('@')?.[0] || 'Tiimi';
     };
 
-    const pointsByPlayer = new Map<string, number>();
+    /** Kauden MVP: paras yhden joukkueen tuoma pistemäärä (max yli joukkueiden), ei summaa kaikista joukkueista. */
+    const LEGACY_HOF = 'legacy:';
+    const displayTeamKeyHof = (teamKey: string) =>
+      teamKey.startsWith(LEGACY_HOF) ? teamKey.slice(LEGACY_HOF.length) : currentTeamNameByUid(teamKey);
+    const teamKeyFromHistoryRowHof = (row: any) => {
+      const uid = row.user_id as string | undefined;
+      if (uid && typeof uid === 'string') return uid;
+      return `${LEGACY_HOF}${row.team_name || 'Nimetön tiimi'}`;
+    };
+    const ptsByTeamAndPlayer = new Map<string, Map<string, number>>();
+    const addPtsHof = (teamKey: string, playerName: string, pts: number) => {
+      if (!playerName?.trim() || !teamKey) return;
+      if (!ptsByTeamAndPlayer.has(teamKey)) ptsByTeamAndPlayer.set(teamKey, new Map());
+      const m = ptsByTeamAndPlayer.get(teamKey)!;
+      m.set(playerName, (m.get(playerName) || 0) + pts);
+    };
     history.forEach((row: any) => {
       const name = row.player_name;
       if (!name) return;
-      pointsByPlayer.set(name, (pointsByPlayer.get(name) || 0) + (Number(row.earned_points) || 0));
+      addPtsHof(teamKeyFromHistoryRowHof(row), name, Number(row.earned_points) || 0);
     });
     allTeamsPicks.forEach((pick: any) => {
+      const uid = pick.user_id;
+      if (!uid) return;
       const name = pick.players?.name;
       if (!name) return;
-      pointsByPlayer.set(name, (pointsByPlayer.get(name) || 0) + getPickPoints(pick));
+      addPtsHof(uid, name, getPickPoints(pick));
     });
-    const mvp = Array.from(pointsByPlayer.entries()).sort((a, b) => b[1] - a[1])[0];
+    const bestTeamForPlayer = new Map<string, { pts: number; teamKey: string }>();
+    ptsByTeamAndPlayer.forEach((playerMap, teamKey) => {
+      playerMap.forEach((pts, playerName) => {
+        const cur = bestTeamForPlayer.get(playerName);
+        if (
+          !cur ||
+          pts > cur.pts ||
+          (pts === cur.pts && teamKey.localeCompare(cur.teamKey, 'fi') < 0)
+        ) {
+          bestTeamForPlayer.set(playerName, { pts, teamKey });
+        }
+      });
+    });
+    const mvpRanking = Array.from(bestTeamForPlayer.entries()).sort(
+      (a, b) => b[1].pts - a[1].pts || a[0].localeCompare(b[0], 'fi')
+    );
+    const mvp = mvpRanking[0];
+    const mvpExpandLines = mvpRanking.slice(1, 5).map(([name, { pts, teamKey }], idx) =>
+      `${idx + 2}. ${name} (${pts} p) — ${displayTeamKeyHof(teamKey)}`
+    );
 
     const valueByPlayer = new Map<string, { points: number; price: number }>();
     const getPlayerPriceByName = (name: string) => {
@@ -740,12 +817,41 @@ export default function Home() {
       const prev = valueByPlayer.get(name) || { points: 0, price: 0 };
       valueByPlayer.set(name, { points: prev.points + pts, price: prev.price + price });
     });
-    const steal = Array.from(valueByPlayer.entries())
-      .map(([name, d]) => ({ name, ratio: d.price > 0 ? d.points / d.price : -Infinity }))
-      .sort((a, b) => b.ratio - a.ratio)[0];
+    const stealRanking = Array.from(valueByPlayer.entries())
+      .filter(([, d]) => d.points > 0 && d.price > 0)
+      .map(([name, d]) => ({
+        name,
+        ratio: d.points / d.price,
+        points: d.points,
+        price: d.price,
+      }))
+      .sort((a, b) => {
+        // Vertaa pisteet/hinta ristitulolla (vakaampi kuin kahden ratio-erotus).
+        const cross = b.points * a.price - a.points * b.price;
+        if (cross !== 0) return cross;
+        return a.name.localeCompare(b.name, 'fi');
+      });
+    const steal = stealRanking[0];
+    const stealExpandLines = stealRanking.slice(1, 5).map(
+      (row, idx) =>
+        `${idx + 2}. ${row.name} (${formatMoneyFi(Math.round(row.price / row.points))}\u00A0€ / piste)`
+    );
 
-    const hotHero = [...players].sort((a, b) => (Number(b.hot_rounds) || 0) - (Number(a.hot_rounds) || 0))[0];
-    const hioKing = [...players].sort((a, b) => (Number(b.hio_count) || 0) - (Number(a.hio_count) || 0))[0];
+    const hotSorted = [...players]
+      .filter((p: any) => (Number(p.hot_rounds) || 0) > 0)
+      .sort((a, b) => (Number(b.hot_rounds) || 0) - (Number(a.hot_rounds) || 0));
+    const hotHero = hotSorted[0];
+    const hotExpandLines = hotSorted.slice(1, 5).map(
+      (p: any, idx) => `${idx + 2}. ${p.name} (${p.hot_rounds} hot roundia)`
+    );
+
+    const hioSorted = [...players]
+      .filter((p: any) => (Number(p.hio_count) || 0) > 0)
+      .sort((a, b) => (Number(b.hio_count) || 0) - (Number(a.hio_count) || 0));
+    const hioKing = hioSorted[0];
+    const hioExpandLines = hioSorted.slice(1, 5).map(
+      (p: any, idx) => `${idx + 2}. ${p.name} (${p.hio_count} hio)`
+    );
 
     const popularity = new Map<string, Set<string>>();
     history.forEach((row: any) => {
@@ -762,9 +868,14 @@ export default function Home() {
       if (!popularity.has(playerName)) popularity.set(playerName, new Set<string>());
       popularity.get(playerName)?.add(managerKey);
     });
-    const mostPopular = Array.from(popularity.entries())
+    const popSorted = Array.from(popularity.entries())
       .map(([name, managers]) => ({ name, count: managers.size }))
-      .sort((a, b) => b.count - a.count)[0];
+      .sort((a, b) => b.count - a.count);
+    const mostPopular = popSorted[0];
+    const popExpandLines =
+      revealMostPopular && popSorted.length > 1
+        ? popSorted.slice(1, 5).map((row, idx) => `${idx + 2}. ${row.name} (${row.count} manageria)`)
+        : [];
 
     const managerTournamentPoints = new Map<string, number>();
     history.forEach((row: any) => {
@@ -782,12 +893,16 @@ export default function Home() {
       const key = `${activeTournament?.name || 'Aktiivinen kisa'}||${manager}`;
       managerTournamentPoints.set(key, (managerTournamentPoints.get(key) || 0) + pts);
     });
-    const allTimeHigh = Array.from(managerTournamentPoints.entries())
+    const athSorted = Array.from(managerTournamentPoints.entries())
       .map(([key, pts]) => {
         const [tournamentName, managerName] = key.split('||');
         return { tournamentName, managerName, pts };
       })
-      .sort((a, b) => b.pts - a.pts)[0];
+      .sort((a, b) => b.pts - a.pts);
+    const allTimeHigh = athSorted[0];
+    const athExpandLines = athSorted.slice(1, 5).map(
+      (row, idx) => `${idx + 2}. ${row.managerName} (${row.pts} p) — ${row.tournamentName}`
+    );
 
     const tournamentPar = new Map<string, { sum: number; count: number }>();
     history.forEach((row: any) => {
@@ -797,9 +912,18 @@ export default function Home() {
       const prev = tournamentPar.get(tName) || { sum: 0, count: 0 };
       tournamentPar.set(tName, { sum: prev.sum + p, count: prev.count + 1 });
     });
-    const hardestCourse = Array.from(tournamentPar.entries())
-      .map(([name, d]) => ({ name, avgPar: d.count ? d.sum / d.count : 0 }))
-      .sort((a, b) => b.avgPar - a.avgPar)[0];
+    const hardestSorted = Array.from(tournamentPar.entries())
+      .map(([name, d]) => ({
+        name,
+        avgPar: d.count ? d.sum / d.count : 0,
+        count: d.count,
+      }))
+      .filter((row) => row.count > 0)
+      .sort((a, b) => b.avgPar - a.avgPar);
+    const hardestCourse = hardestSorted[0];
+    const hardestExpandLines = hardestSorted.slice(1, 5).map(
+      (row, idx) => `${idx + 2}. ${row.name} (keski-par ${row.avgPar.toFixed(2)})`
+    );
 
     const tournamentPoints = new Map<string, number>();
     history.forEach((row: any) => {
@@ -810,56 +934,74 @@ export default function Home() {
     if (currentTotalPoints > 0) {
       tournamentPoints.set(activeTournament?.name || 'Aktiivinen kisa', (tournamentPoints.get(activeTournament?.name || 'Aktiivinen kisa') || 0) + currentTotalPoints);
     }
-    const flood = Array.from(tournamentPoints.entries()).sort((a, b) => b[1] - a[1])[0];
+    const floodSorted = Array.from(tournamentPoints.entries()).sort((a, b) => b[1] - a[1]);
+    const flood = floodSorted[0];
+    const floodExpandLines = floodSorted.slice(1, 5).map(
+      ([name, pts], idx) => `${idx + 2}. ${name} (${pts} p)`
+    );
 
     return [
       {
         emoji: '🏆',
         title: 'Kauden MVP',
-        value: mvp ? `${mvp[0]} (${mvp[1]} p)` : fallback,
-        detail: 'Eniten kokonaispisteitä kerännyt pelaaja',
+        value: mvp ? `${mvp[0]} (${mvp[1].pts} p)` : fallback,
+        contextLine: mvp ? `Joukkue: ${displayTeamKeyHof(mvp[1].teamKey)}` : undefined,
+        detail: 'Eniten pisteitä yhdelle joukkueelle (paras joukkuekohtainen tuotto kaudella)',
+        expandLines: mvpExpandLines,
       },
       {
         emoji: '💎',
         title: 'Hinta-laatusuhde',
-        value: steal && Number.isFinite(steal.ratio) ? `${steal.name} (${steal.ratio.toFixed(4)} p / €)` : fallback,
-        detail: 'Pisteet suhteessa hankintahintaan',
+        value:
+          steal && Number.isFinite(steal.ratio)
+            ? `${steal.name} (${formatMoneyFi(Math.round(steal.price / steal.points))}\u00A0€ / piste)`
+            : fallback,
+        detail:
+          'Pienin maksettu summa per ansaitsema fantasypiste (€/piste), koko kauden hankinnat ja pisteet. Matalampi luku on parempi — listassa 2–5 on kalliimpia per piste kuin ykkönen.',
+        expandLines: stealExpandLines,
       },
       {
         emoji: '🔥',
         title: 'Hot round -sankari',
         value: hotHero && (Number(hotHero.hot_rounds) || 0) > 0 ? `${hotHero.name} (${hotHero.hot_rounds} hot roundia)` : fallback,
         detail: 'Eniten Hot Round -bonuksia',
+        expandLines: hotExpandLines,
       },
       {
         emoji: '⛳',
         title: 'Holari-kuningas',
         value: hioKing && (Number(hioKing.hio_count) || 0) > 0 ? `${hioKing.name} (${hioKing.hio_count} hio)` : fallback,
         detail: 'Eniten HIO-merkintöjä',
+        expandLines: hioExpandLines,
       },
       {
         emoji: '⭐',
         title: 'Suosituin valinta',
         value: revealMostPopular && mostPopular ? `${mostPopular.name} (${mostPopular.count} managerin joukkueessa)` : fallback,
         detail: revealMostPopular ? 'Useimmin managerien valitsema pelaaja' : 'Piilotettu kunnes kisa on lukittu',
+        expandLines: popExpandLines,
       },
       {
         emoji: '🚀',
         title: 'Kovin turnaussaldo',
         value: allTimeHigh ? `${allTimeHigh.managerName} (${allTimeHigh.pts} p)` : fallback,
-        detail: allTimeHigh ? `Turnaus: ${allTimeHigh.tournamentName}` : 'Paras yksittäinen turnaustulos managerille',
+        contextLine: allTimeHigh ? `Turnaus: ${allTimeHigh.tournamentName}` : undefined,
+        detail: 'Paras yksittäinen turnaustulos managerille',
+        expandLines: athExpandLines,
       },
       {
         emoji: '🌪️',
         title: 'Vaikein rata',
         value: hardestCourse ? `${hardestCourse.name} (keski-par ${hardestCourse.avgPar.toFixed(2)})` : fallback,
         detail: 'Huonoin keskimääräinen par-tulos',
+        expandLines: hardestExpandLines,
       },
       {
         emoji: '🌊',
         title: 'Pistetulva',
         value: flood ? `${flood[0]} (${flood[1]} p)` : fallback,
         detail: 'Turnaus, jossa jaettiin eniten pisteitä',
+        expandLines: floodExpandLines,
       },
     ];
   })();
@@ -868,7 +1010,7 @@ export default function Home() {
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6">
       <header className="bp-header bp-card mb-5 p-5 md:p-6">
         <div className="bp-header-inner flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 flex-1 items-center gap-14">
+          <div className="bp-header-logo-row">
             <div className="bp-header-logo-wrap">
               <Image
                 src="/logo.png"
@@ -886,7 +1028,7 @@ export default function Home() {
                   {activeTournament?.name || 'Ei aktiivista turnasta'}
                 </h1>
                 {activeTournament?.is_locked && (
-                  <span className="inline-flex items-center rounded-full border border-amber-400/25 bg-amber-500/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-amber-200/95 backdrop-blur">
+                  <span className="bp-locked-badge bp-locked-badge--header shrink-0">
                     Lukittu
                   </span>
                 )}
@@ -964,6 +1106,7 @@ export default function Home() {
         <AdminPanel 
           activeTournament={activeTournament}
           updateTournamentName={updateTournamentName}
+          updateTournamentRoundParStrokes={updateTournamentRoundParStrokes}
           players={players.filter(p => p.is_active)}
           adminSearch={adminSearch}
           setAdminSearch={setAdminSearch}
@@ -1108,6 +1251,10 @@ export default function Home() {
           <Leaderboards
             tab={leaderboardTab}
             setTab={setLeaderboardTab}
+            boardMode={resultsBoard}
+            setBoardMode={setResultsBoard}
+            playerTournamentRows={playerTournamentRows}
+            playerSeasonRows={playerSeasonRows}
             activeBoard={leaderboardTab === 'tournament' ? tournamentBoard : seasonBoard}
             profiles={profiles}
             isLocked={!!activeTournament?.is_locked}

@@ -5,7 +5,11 @@ export interface HallOfFameItem {
   emoji: string;
   title: string;
   value: string;
+  /** Toissijainen rivi (esim. joukkue MVP:lle, turnaus kovimmalle saldolle). */
+  contextLine?: string;
   detail?: string;
+  /** Sijat 2–5 tms. — näytetään klikattavassa laajennuksessa. */
+  expandLines?: string[];
 }
 
 interface HallOfFameProps {
@@ -39,8 +43,19 @@ export default function HallOfFame({ items }: HallOfFameProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="hof-title">{item.title}</h3>
-                <p className="hof-value">{item.value}</p>
+                <p className="hof-value break-words">{item.value}</p>
+                {item.contextLine && <p className="hof-context">{item.contextLine}</p>}
                 {item.detail && <p className="hof-detail">{item.detail}</p>}
+                {item.expandLines && item.expandLines.length > 0 && (
+                  <details className="hof-details">
+                    <summary className="hof-details-summary">Näytä seuraavat sijat (2–5)</summary>
+                    <ul className="hof-details-list">
+                      {item.expandLines.map((line, i) => (
+                        <li key={i}>{line}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             </div>
           </article>

@@ -180,6 +180,10 @@ export default function PlayerMarket({
                         </button>
                       )}
                     </div>
+                  ) : isLocked ? (
+                    <span className="bp-locked-badge bp-locked-badge--row shrink-0 self-center" title="Turnaus on lukittu">
+                      Lukittu
+                    </span>
                   ) : (
                     <button
                       type="button"
@@ -197,7 +201,7 @@ export default function PlayerMarket({
                         cannotBuy ? "cursor-not-allowed opacity-40" : "",
                       ].join(" ")}
                     >
-                      {isLocked ? "Lukittu" : teamFull ? "Täynnä" : tooExpensive ? "Ei budjettia" : "Osta"}
+                      {teamFull ? "Täynnä" : tooExpensive ? "Ei budjettia" : "Osta"}
                     </button>
                   )}
                 </div>

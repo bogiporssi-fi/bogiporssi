@@ -1,6 +1,9 @@
 "use client";
 import React from "react";
+import { breakdownFromPlayerRow } from "../../lib/pointsBreakdown";
+import PlayerPointsBreakdownPanel from "./PlayerPointsBreakdownPanel";
 import TeamLogo from "./TeamLogo";
+import TeamRoundTotalsStrip from "./TeamRoundTotalsStrip";
 
 interface UserTeamProps {
   team: any[];
@@ -45,6 +48,11 @@ export default function UserTeam({
       </div>
 
       <div className="pm-grid">
+        {team.length > 0 && (
+          <div className="col-span-full">
+            <TeamRoundTotalsStrip picks={team} />
+          </div>
+        )}
         {team.length === 0 && (
           <div className="col-span-full rounded-[10px] border border-dashed border-white/15 bg-white/[0.03] p-5 text-center text-sm text-white/55 backdrop-blur">
             Tiimisi on tyhjä. Osta pelaajia Pelaajatorista.
@@ -67,8 +75,12 @@ export default function UserTeam({
               ? Number(pick.buy_price)
               : getPrice(Number.isFinite(rating) ? rating : 950);
 
+          const pl = pick.players;
+          const breakdown = pl ? breakdownFromPlayerRow(pl) : null;
+          const storedPts = pl != null ? Number(pl.points) || 0 : null;
+
           return (
-            <article key={pick.player_id} className="pm-card">
+            <article key={pick.player_id} className="pm-card pm-card--stack">
               <div className="pm-row-dense pm-row-dense--team">
                 <div className="pm-avatar" aria-hidden>
                   {initials(name)}
@@ -103,12 +115,19 @@ export default function UserTeam({
                       Poista
                     </button>
                   ) : (
-                    <span className="inline-flex shrink-0 rounded-lg border border-white/12 bg-white/[0.04] px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white/45">
+                    <span className="bp-locked-badge bp-locked-badge--row shrink-0">
                       Lukittu
                     </span>
                   )}
                 </div>
               </div>
+              {breakdown && (
+                <PlayerPointsBreakdownPanel
+                  breakdown={breakdown}
+                  storedPoints={storedPts}
+                  className="mt-3 border-t border-white/10 pt-2"
+                />
+              )}
             </article>
           );
         })}

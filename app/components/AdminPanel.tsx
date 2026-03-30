@@ -11,13 +11,14 @@ interface AdminPanelProps {
   startNewTournament: () => void;
   toggleTournamentLock: () => void;
   updateTournamentName: (newName: string) => void;
+  updateTournamentRoundParStrokes: (value: number | null) => void | Promise<void>;
   saveAdminStats: (pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) => void;
 }
 
 export default function AdminPanel({
   activeTournament, players, adminSearch, setAdminSearch, 
   handleRatingImport, importResultsFromCsvFile, startNewTournament, toggleTournamentLock, 
-  saveAdminStats, updateTournamentName
+  saveAdminStats, updateTournamentName, updateTournamentRoundParStrokes
 }: AdminPanelProps) {
   const resultsCsvRef = useRef<HTMLInputElement>(null);
   
@@ -468,6 +469,44 @@ export default function AdminPanel({
         />
       </div>
 
+      <div style={styles.tournamentNameBox}>
+        <div style={styles.labelRow}>
+          <div style={styles.dot('#34d399')} />
+          <label style={styles.label}>Kierroksen par (heitot)</label>
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+          Sama luku kaikille kierroksille tässä kisassa (esim. 54). CSV:n <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1</span>,{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_2</span>… -sarakkeiden heitot vähennetään tästä → par-ero fantasy-laskentaan. Vaihda luku kun kisa vaihtuu.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            key={`rp-${activeTournament?.id ?? 'x'}`}
+            defaultValue={
+              activeTournament?.round_par_strokes != null && activeTournament.round_par_strokes > 0
+                ? activeTournament.round_par_strokes
+                : ''
+            }
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v === '') {
+                void updateTournamentRoundParStrokes(null);
+                return;
+              }
+              const n = parseInt(v, 10);
+              void updateTournamentRoundParStrokes(Number.isFinite(n) && n > 0 ? n : null);
+            }}
+            placeholder="esim. 54"
+            className="bp-input"
+            style={{ maxWidth: '140px' }}
+            aria-label="Kierroksen par heittoina"
+          />
+          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Tyhjä = ei asetettu (rd-*-tuonti vaatii luvun).</span>
+        </div>
+      </div>
+
       {/* Tulosten tuonti CSV (Excel → Tallenna nimellä CSV UTF-8) */}
       <div style={styles.tournamentNameBox}>
         <div style={styles.labelRow}>
@@ -478,16 +517,25 @@ export default function AdminPanel({
           Excelissä paras: <strong style={{ color: 'rgba(255,255,255,0.85)' }}>Tallenna nimellä → CSV UTF-8</strong>.
           Tuonti yrittää myös lukea Windows Excelin tavallisen ANSI/CSV-koodauksen (Väinö, Semerád jne.).
           Erotin: puolipiste tai pilkku; tab-taulukko käy.
-          Otsikkorivi ja sarakkeet (nimet isolla/pienellä):{' '}
+          Perusotsikot (esim.):{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>
-            Pelaaja;Tulos;Kierrokset;Hot;HIO;Sija
-          </span>
-          . Valinnainen: <span style={{ fontFamily: 'ui-monospace, monospace' }}>Rating</span>.{' '}
-          Sija: <span style={{ fontFamily: 'ui-monospace, monospace' }}>1.</span> / <span style={{ fontFamily: 'ui-monospace, monospace' }}>2.</span> /{' '}
-          <span style={{ fontFamily: 'ui-monospace, monospace' }}>T10</span> tai suora bonus{' '}
-          <span style={{ fontFamily: 'ui-monospace, monospace' }}>10</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>5</span>,{' '}
-          <span style={{ fontFamily: 'ui-monospace, monospace' }}>2</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>0</span>.
+            name;par;rating;place
+          </span>{' '}
+          + <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>Pelaaja;Tulos;Kierrokset;Hot;HIO;Sija</span>
+          -tyyli käy edelleen. <strong style={{ color: 'rgba(255,255,255,0.85)' }}>place</strong> (sijoitusluku) → bonus: 1.→10, 2–3.→5, 4–10.→2 pistettä. Jos{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>Sija</span>-sarake on täytetty tekstinä (1., T10), sitä käytetään ensisijaisesti.
+          <br />
+          <strong style={{ color: 'rgba(255,255,255,0.85)' }}>Heitot per kierros:</strong> sarakkeet{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1;rd_2;rd_3</span>
+          (voit lisätä <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_4</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_5</span>…) + valinnainen{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>hot_round_1;hio_1;…</span>. Aseta yläpuolelle{' '}
+          <strong>Kierroksen par (heitot)</strong> ennen tuontia — par-ero = heitot − tuo luku.
+          <br />
+          Vaihtoehto: suora par-ero kierroksittain:{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>k1_par;k1_hot;k1_hio;…</span>
+          <br />
           Tuonti <strong style={{ color: 'rgba(255,255,255,0.85)' }}>ylikirjoittaa</strong> samat kentät kuin rivin Tallenna-nappi.
+          <strong style={{ color: 'rgba(251,191,36,0.9)' }}> Tallenna</strong> tyhjentää kierroskohtaisen tallennuksen (käytä CSV:ää uudelleen erittelyä varten).
         </p>
         <input
           ref={resultsCsvRef}
@@ -511,7 +559,7 @@ export default function AdminPanel({
           Valitse tulos-CSV…
         </button>
         <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
-          Manuaalinen syöttö taulukossa säilyy.
+          Manuaalinen syöttö taulukossa säilyy (ei kierrosrivejä — kierrokset vain CSV:stä).
         </span>
       </div>
       

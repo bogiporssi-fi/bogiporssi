@@ -50,6 +50,22 @@ body {
   position: relative;
   z-index: 1;
 }
+/* Logo + turnausotsikko: eksplisiittinen väli (Tailwind gap voi kadota / olla liian tiukka mobiilissa) */
+.bp-header-logo-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .bp-header-logo-row {
+    gap: 1.5rem;
+  }
+}
+.bp-header-brand-text {
+  min-width: 0;
+}
 .bp-header-logo-wrap {
   flex-shrink: 0;
   display: flex;
@@ -731,6 +747,60 @@ body {
   opacity: 0.45;
 }
 
+/* Valittu / Lukittu — sama pilli-emerald kuin muu pm-tag -grafiikka */
+.pm-picked-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.42);
+  background: linear-gradient(
+    160deg,
+    rgba(52, 211, 153, 0.14) 0%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(209, 250, 229, 0.95);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Lukittu (turnaus) — käytössä yläpalkissa ja korteissa */
+.bp-locked-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.38);
+  background: linear-gradient(
+    165deg,
+    rgba(52, 211, 153, 0.12) 0%,
+    rgba(15, 23, 42, 0.35) 55%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  color: rgba(209, 250, 229, 0.92);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.75rem;
+  line-height: 1.2;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.bp-locked-badge--header {
+  font-size: 11px;
+  padding: 0.4rem 0.75rem;
+  letter-spacing: 0.08em;
+}
+.bp-locked-badge--row {
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+}
+
 /* Budjetti-alue (Pelaajatori) */
 .pm-budget-card {
   border-radius: 10px;
@@ -874,9 +944,435 @@ body {
   line-height: 1.35;
   color: #fef3c7;
 }
+.hof-context {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: rgba(254, 243, 199, 0.82);
+}
 .hof-detail {
   margin: 0.45rem 0 0;
   font-size: 0.6875rem;
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.48);
+}
+.hof-details {
+  margin: 0.55rem 0 0;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+.hof-details-summary {
+  cursor: pointer;
+  list-style: none;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  color: rgba(251, 191, 36, 0.9);
+}
+.hof-details-summary::-webkit-details-marker {
+  display: none;
+}
+.hof-details-summary::marker {
+  content: "";
+}
+.hof-details[open] .hof-details-summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.hof-details-list {
+  margin: 0;
+  padding: 0.35rem 0.55rem 0.5rem 1.25rem;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+}
+.hof-details-list li {
+  margin: 0.2rem 0 0;
+}
+.hof-details-list li:first-child {
+  margin-top: 0;
+}
+
+/* Tulokset > Pelaajat — sama henki kuin pm-card, kompakti taulukko */
+.pm-player-stats-outer {
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #34d399;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.pm-player-stats-scroll {
+  max-height: min(75vh, 42rem);
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pm-player-stats-table {
+  width: 100%;
+  min-width: 17rem;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.pm-player-stats-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.65rem 0.5rem;
+  text-align: left;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  background: linear-gradient(
+    180deg,
+    rgba(18, 22, 28, 0.98) 0%,
+    rgba(14, 16, 22, 0.96) 100%
+  );
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.pm-player-stats-table thead th:first-child {
+  padding-left: 0.85rem;
+}
+
+.pm-player-stats-table thead th:last-child {
+  padding-right: 0.85rem;
+  text-align: right;
+}
+
+.pm-player-stats-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background-color 0.12s ease;
+}
+
+.pm-player-stats-table tbody tr.pm-player-stats-data-tr--shade {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pm-player-stats-table tbody tr.pm-player-stats-data-tr:hover {
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.pm-player-stats-table tbody tr.pm-player-breakdown-tr {
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pm-player-stats-table tbody tr.pm-player-breakdown-tr:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.pm-player-stats-table td {
+  padding: 0.5rem 0.5rem;
+  vertical-align: middle;
+}
+
+.pm-player-stats-table td:first-child {
+  padding-left: 0.85rem;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.pm-player-stats-table td:last-child {
+  padding-right: 0.85rem;
+}
+
+.pm-player-stats-table thead th:nth-child(2),
+.pm-player-stats-table tbody td:nth-child(2) {
+  text-align: left;
+}
+
+.pm-player-stats-table .pm-player-stats-name-wrap {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pm-player-stats-table .pm-player-stats-rank--top3 {
+  color: rgba(251, 191, 36, 0.95);
+}
+
+.pm-player-stats-table .pm-player-stats-pts {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: rgba(186, 230, 253, 0.98);
+}
+
+.pm-player-stats-table .pm-player-stats-pts--zero {
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+}
+
+.pm-player-breakdown {
+  margin: 0;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pm-player-breakdown-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  min-height: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  color: rgba(251, 191, 36, 0.9);
+}
+
+@media (min-width: 640px) {
+  .pm-player-breakdown-summary {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8125rem;
+    letter-spacing: 0.02em;
+  }
+}
+
+.pm-player-breakdown-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pm-player-breakdown-hint {
+  margin: 0 0 0.35rem;
+  padding: 0 0.55rem;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.pm-team-round-totals {
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.07);
+}
+
+.pm-team-round-totals-label {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+  margin-bottom: 0.35rem;
+}
+
+.pm-team-round-totals-chips {
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Tulokset > Joukkueet: vastustajan roster — joukkue/kierros selvästi esiin */
+.pm-team-round-totals--roster {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(52, 211, 153, 0.38);
+  background: linear-gradient(
+    165deg,
+    rgba(52, 211, 153, 0.18) 0%,
+    rgba(16, 185, 129, 0.08) 42%,
+    rgba(0, 0, 0, 0.12) 100%
+  );
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.pm-team-round-totals--roster .pm-team-round-totals-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: rgba(167, 243, 208, 0.95);
+  margin-bottom: 0.5rem;
+}
+
+.pm-team-round-totals--roster .pm-team-round-totals-chips {
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.55;
+}
+
+/* Rosterin pelaajarivit: ei valkoista reunaviivaa, vain kevyt tausta */
+.pm-roster-pick-row {
+  background: rgba(255, 255, 255, 0.035);
+  border: none;
+  box-shadow: none;
+}
+
+.pm-player-breakdown.pm-roster-player-breakdown {
+  border: none;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 0.5rem;
+}
+
+.pm-roster-pick-row .pm-player-breakdown-chips {
+  border-color: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.pm-player-breakdown.pm-roster-player-breakdown .pm-player-breakdown-rounds {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
+.pm-player-breakdown.pm-roster-player-breakdown .pm-player-breakdown-yhteenveto-label {
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.pm-player-breakdown.pm-roster-player-breakdown .pm-player-breakdown-total {
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.pm-player-breakdown-chips {
+  margin: 0 0 0.35rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.625rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.pm-player-breakdown-chips-k {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(167, 243, 208, 0.85);
+  margin-right: 0.2rem;
+}
+
+.pm-player-breakdown-chips-v {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.pm-player-breakdown-chips-sep {
+  margin: 0 0.35rem;
+  color: rgba(255, 255, 255, 0.28);
+  font-weight: 600;
+}
+
+.pm-player-breakdown-rounds {
+  margin: 0;
+  padding: 0.3rem 0.55rem 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pm-player-breakdown-rounds-title {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 0.35rem;
+}
+
+.pm-player-breakdown-round-block {
+  margin: 0.4rem 0 0;
+  padding-left: 0.45rem;
+  border-left: 2px solid rgba(52, 211, 153, 0.35);
+}
+
+.pm-player-breakdown-round-block:first-of-type {
+  margin-top: 0;
+}
+
+.pm-player-breakdown-round-label {
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.6875rem;
+}
+
+.pm-player-breakdown-sublist {
+  margin: 0.15rem 0 0;
+  padding-left: 0.85rem;
+  list-style: disc;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.pm-player-breakdown-round-subtotal {
+  margin-top: 0.2rem;
+  list-style: none;
+  margin-left: -0.85rem;
+  padding-left: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-weight: 600;
+}
+
+.pm-player-breakdown-yhteenveto-label {
+  list-style: none;
+  margin-left: -1.1rem;
+  margin-top: 0 !important;
+  padding-top: 0.35rem;
+  margin-bottom: 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pm-player-breakdown-list {
+  margin: 0;
+  padding: 0.35rem 0.55rem 0.55rem 1.1rem;
+  font-size: 0.6875rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.pm-player-breakdown-list li {
+  margin: 0.15rem 0 0;
+}
+
+.pm-player-breakdown-list li:first-child {
+  margin-top: 0;
+}
+
+.pm-player-breakdown-total {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  list-style: none;
+  margin-left: -1.1rem;
+  padding-left: 1.1rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.pm-player-breakdown-note {
+  margin: 0;
+  padding: 0 0.55rem 0.5rem;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  color: rgba(251, 191, 36, 0.65);
 }

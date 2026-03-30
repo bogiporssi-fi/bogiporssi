@@ -2,6 +2,8 @@
  * Admin-tulosten tuonti CSV/tekstitiedostosta (Excel → Tallenna CSV UTF-8).
  */
 
+import { aggregatesFromStoredRounds, type RoundBreakdownStored } from "./roundBreakdown";
+
 export type ActivePlayer = {
   id: string;
   name: string;
@@ -16,12 +18,19 @@ export type ParsedStatUpdate = {
   hio: number;
   pos: number;
   official_rating: number;
+  /** null = ei kierrosdataa; lista = tallennetaan players.round_breakdown */
+  roundBreakdown: RoundBreakdownStored | null;
 };
 
 export type ParseResultsCsvOutcome = {
   updates: ParsedStatUpdate[];
   unknownNames: string[];
   parseWarnings: string[];
+};
+
+export type ParseResultsCsvOptions = {
+  /** Kierroksen tavoiteheitot (turnauksen asetus); rd_*-sarakkeisiin pakollinen */
+  roundParStrokes: number | null;
 };
 
 const HEADER_ALIASES: Record<string, ColumnKey> = {
@@ -42,9 +51,18 @@ const HEADER_ALIASES: Record<string, ColumnKey> = {
   sijoitus: "pos",
   pos: "pos",
   rating: "rating",
+  place: "placeRank",
 };
 
-type ColumnKey = "name" | "par" | "rounds" | "hot" | "hio" | "pos" | "rating";
+type ColumnKey =
+  | "name"
+  | "par"
+  | "rounds"
+  | "hot"
+  | "hio"
+  | "pos"
+  | "rating"
+  | "placeRank";
 
 function normalizeHeader(h: string): string {
   return h
@@ -52,6 +70,15 @@ function normalizeHeader(h: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+/** Sija 1→10, 2–3→5, 4–10→2, muut 0 */
+export function positionBonusFromPlace(rank: number): number {
+  if (!Number.isFinite(rank) || rank <= 0) return 0;
+  if (rank === 1) return 10;
+  if (rank >= 2 && rank <= 3) return 5;
+  if (rank >= 4 && rank <= 10) return 2;
+  return 0;
 }
 
 /** Sama logiikka kuin admin-select: 10 / 5 / 2 / 0 */
@@ -142,10 +169,109 @@ function buildNameIndex(players: ActivePlayer[]): Map<string, ActivePlayer> {
   return m;
 }
 
+/** rd_1, rd_2, hot_round_1 tai hr_1, hio_1 */
+function parseRdRoundColumnMaps(headerCells: string[]): {
+  roundRdIndex: Map<number, number>;
+  roundHotIndex: Map<number, number>;
+  roundHioIndex: Map<number, number>;
+  roundNumbers: number[];
+} | null {
+  const roundRdIndex = new Map<number, number>();
+  const roundHotIndex = new Map<number, number>();
+  const roundHioIndex = new Map<number, number>();
+
+  const reRd = /^rd_(\d+)$/;
+  const reHotRound = /^hot_round_(\d+)$/;
+  const reHr = /^hr_(\d+)$/;
+  const reHio = /^hio_(\d+)$/;
+
+  headerCells.forEach((raw, i) => {
+    const stripped = normalizeHeader(raw.replace(/^"|"$/g, ""))
+      .replace(/\s*\([^)]*\)\s*/g, " ")
+      .trim();
+    let m = stripped.match(reRd);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundRdIndex.set(n, i);
+      return;
+    }
+    m = stripped.match(reHotRound);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundHotIndex.set(n, i);
+      return;
+    }
+    m = stripped.match(reHr);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundHotIndex.set(n, i);
+      return;
+    }
+    m = stripped.match(reHio);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundHioIndex.set(n, i);
+    }
+  });
+
+  if (roundRdIndex.size === 0) return null;
+  const roundNumbers = [...roundRdIndex.keys()].sort((a, b) => a - b);
+  return { roundRdIndex, roundHotIndex, roundHioIndex, roundNumbers };
+}
+
+/** Otsikoista k1_par, k1_hot, k1_hio, k2_par, … */
+function parseKRoundColumnMaps(headerCells: string[]): {
+  roundParIndex: Map<number, number>;
+  roundHotIndex: Map<number, number>;
+  roundHioIndex: Map<number, number>;
+  roundNumbers: number[];
+} | null {
+  const roundParIndex = new Map<number, number>();
+  const roundHotIndex = new Map<number, number>();
+  const roundHioIndex = new Map<number, number>();
+
+  const rePar = /^k(\d+)_par$/;
+  const reHot = /^k(\d+)_hot$/;
+  const reHio = /^k(\d+)_hio$/;
+
+  headerCells.forEach((raw, i) => {
+    const stripped = normalizeHeader(raw.replace(/^"|"$/g, ""))
+      .replace(/\s*\([^)]*\)\s*/g, " ")
+      .trim();
+    let m = stripped.match(rePar);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundParIndex.set(n, i);
+      return;
+    }
+    m = stripped.match(reHot);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundHotIndex.set(n, i);
+      return;
+    }
+    m = stripped.match(reHio);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1) roundHioIndex.set(n, i);
+    }
+  });
+
+  if (roundParIndex.size === 0) return null;
+  const roundNumbers = [...roundParIndex.keys()].sort((a, b) => a - b);
+  return { roundParIndex, roundHotIndex, roundHioIndex, roundNumbers };
+}
+
 /**
- * Ensimmäinen rivi = otsikot. Tuonti ylikirjoittaa samat kentät kuin admin-Tallenna.
+ * Ensimmäinen rivi = otsikot. Tuonti ylikirjoittaa samat kentät kuin rivin Tallenna-nappi.
+ * rd_* + roundParStrokes → heitot muunnetaan par-eroiksi. k1_par → suora par-ero.
  */
-export function parseResultsCsv(text: string, activePlayers: ActivePlayer[]): ParseResultsCsvOutcome {
+export function parseResultsCsv(
+  text: string,
+  activePlayers: ActivePlayer[],
+  options: ParseResultsCsvOptions = { roundParStrokes: null }
+): ParseResultsCsvOutcome {
+  const { roundParStrokes } = options;
   const parseWarnings: string[] = [];
   const unknownNames: string[] = [];
   const updates: ParsedStatUpdate[] = [];
@@ -162,18 +288,35 @@ export function parseResultsCsv(text: string, activePlayers: ActivePlayer[]): Pa
   }
 
   const delimiter = detectDelimiter(lines[0]);
-  const headerCells = splitCsvLine(lines[0], delimiter).map((c) => normalizeHeader(c.replace(/^"|"$/g, "")));
+  const headerCells = splitCsvLine(lines[0], delimiter).map((c) => c.replace(/^"|"$/g, "").trim());
   const colIndex: Partial<Record<ColumnKey, number>> = {};
 
   headerCells.forEach((h, i) => {
-    const stripped = h.replace(/\s*\([^)]*\)\s*/g, " ").trim();
-    const key = HEADER_ALIASES[h] ?? HEADER_ALIASES[stripped];
+    const nh = normalizeHeader(h.replace(/^"|"$/g, ""));
+    const stripped = nh.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+    const key = HEADER_ALIASES[nh] ?? HEADER_ALIASES[stripped];
     if (key) colIndex[key] = i;
   });
 
   if (colIndex.name === undefined) {
-    parseWarnings.push('Otsikkoriviltä puuttuu pelaajan sarake (esim. "Pelaaja" tai "Nimi").');
+    parseWarnings.push('Otsikkoriviltä puuttuu pelaajan sarake (esim. "Pelaaja", "Nimi" tai "name").');
     return { updates, unknownNames, parseWarnings };
+  }
+
+  const rdMaps = parseRdRoundColumnMaps(headerCells);
+  const kRound = rdMaps ? null : parseKRoundColumnMaps(headerCells);
+
+  if (rdMaps) {
+    if (
+      roundParStrokes == null ||
+      !Number.isFinite(roundParStrokes) ||
+      roundParStrokes <= 0
+    ) {
+      parseWarnings.push(
+        'CSV:ssä on rd_*-sarakkeet (heitot): aseta Adminissa "Kierroksen par (heitot)" positiiviseksi luvuksi (esim. 54) ennen tuontia.'
+      );
+      return { updates, unknownNames, parseWarnings };
+    }
   }
 
   const byName = buildNameIndex(activePlayers);
@@ -196,15 +339,93 @@ export function parseResultsCsv(text: string, activePlayers: ActivePlayer[]): Pa
       return cells[idx] ?? "";
     };
 
-    const par = parseIntCell(g("par"), 0);
-    const rounds = parseIntCell(g("rounds"), 0);
-    const hot = parseIntCell(g("hot"), 0);
-    const hio = parseIntCell(g("hio"), 0);
-    const posRaw = g("pos");
-    const pos = parsePositionBonus(posRaw);
     const fallbackRat = Number(pl.official_rating) || 950;
     const official_rating =
       colIndex.rating !== undefined ? parseRatingCell(g("rating"), fallbackRat) : fallbackRat;
+
+    let par = parseIntCell(g("par"), 0);
+    let rounds = parseIntCell(g("rounds"), 0);
+    let hot = parseIntCell(g("hot"), 0);
+    let hio = parseIntCell(g("hio"), 0);
+
+    const posRaw = g("pos");
+    let pos = 0;
+    if (colIndex.pos !== undefined && posRaw.trim() !== "") {
+      pos = parsePositionBonus(posRaw);
+    } else if (colIndex.placeRank !== undefined) {
+      const placeRaw = cells[colIndex.placeRank] ?? "";
+      pos = positionBonusFromPlace(parseIntCell(placeRaw, 0));
+    }
+
+    let roundBreakdown: RoundBreakdownStored | null = null;
+
+    if (rdMaps && roundParStrokes != null && roundParStrokes > 0) {
+      const rb: RoundBreakdownStored = [];
+      for (const n of rdMaps.roundNumbers) {
+        const ri = rdMaps.roundRdIndex.get(n);
+        if (ri === undefined) continue;
+        const rdCell = cells[ri] ?? "";
+        if (rdCell.trim() === "") continue;
+
+        const strokes = parseIntCell(rdCell, 0);
+        const parDelta = strokes - roundParStrokes;
+
+        const hi = rdMaps.roundHotIndex.get(n);
+        const ho = rdMaps.roundHioIndex.get(n);
+        const hotCell = hi !== undefined && hi < cells.length ? cells[hi] ?? "" : "";
+        const hioCell = ho !== undefined && ho < cells.length ? cells[ho] ?? "" : "";
+
+        const hotN = Math.min(9, Math.max(0, parseIntCell(hotCell, 0)));
+        const hioN = Math.min(9, Math.max(0, parseIntCell(hioCell, 0)));
+
+        rb.push({
+          n,
+          par: parDelta,
+          hot: hotN,
+          hio: hioN,
+        });
+      }
+
+      if (rb.length > 0) {
+        roundBreakdown = rb;
+        const agg = aggregatesFromStoredRounds(rb);
+        par = agg.par;
+        rounds = agg.rounds;
+        hot = agg.hot;
+        hio = agg.hio;
+      }
+    } else if (kRound) {
+      const rb: RoundBreakdownStored = [];
+      for (const n of kRound.roundNumbers) {
+        const pi = kRound.roundParIndex.get(n);
+        if (pi === undefined) continue;
+        const parCell = cells[pi] ?? "";
+        const hi = kRound.roundHotIndex.get(n);
+        const ho = kRound.roundHioIndex.get(n);
+        const hotCell = hi !== undefined && hi < cells.length ? cells[hi] ?? "" : "";
+        const hioCell = ho !== undefined && ho < cells.length ? cells[ho] ?? "" : "";
+
+        if (parCell.trim() === "" && hotCell.trim() === "" && hioCell.trim() === "") {
+          continue;
+        }
+
+        rb.push({
+          n,
+          par: parseIntCell(parCell, 0),
+          hot: parseIntCell(hotCell, 0),
+          hio: parseIntCell(hioCell, 0),
+        });
+      }
+
+      if (rb.length > 0) {
+        roundBreakdown = rb;
+        const agg = aggregatesFromStoredRounds(rb);
+        par = agg.par;
+        rounds = agg.rounds;
+        hot = agg.hot;
+        hio = agg.hio;
+      }
+    }
 
     updates.push({
       playerId: pl.id,
@@ -214,6 +435,7 @@ export function parseResultsCsv(text: string, activePlayers: ActivePlayer[]): Pa
       hio,
       pos,
       official_rating,
+      roundBreakdown,
     });
   }
 
@@ -229,7 +451,8 @@ type TextEncoding = "utf-8" | "windows-1252" | "iso-8859-1";
  */
 export function decodeAndParseResultsCsv(
   buf: ArrayBuffer,
-  activePlayers: ActivePlayer[]
+  activePlayers: ActivePlayer[],
+  options: ParseResultsCsvOptions = { roundParStrokes: null }
 ): ParseResultsCsvOutcome & { decodingUsed: TextEncoding } {
   const encodings: TextEncoding[] = ["utf-8", "windows-1252", "iso-8859-1"];
   let best: ParseResultsCsvOutcome | null = null;
@@ -243,9 +466,10 @@ export function decodeAndParseResultsCsv(
     } catch {
       continue;
     }
-    const out = parseResultsCsv(text, activePlayers);
+    const out = parseResultsCsv(text, activePlayers, options);
     if (out.parseWarnings.length > 0) continue;
-    const score = out.updates.length * 1000 - out.unknownNames.length * 100;
+    const kBonus = out.updates.some((u) => u.roundBreakdown && u.roundBreakdown.length > 0) ? 50 : 0;
+    const score = out.updates.length * 1000 - out.unknownNames.length * 100 + kBonus;
     if (score > bestScore) {
       bestScore = score;
       best = out;
@@ -258,5 +482,5 @@ export function decodeAndParseResultsCsv(
   }
 
   const fallback = new TextDecoder("utf-8", { fatal: false }).decode(buf);
-  return { ...parseResultsCsv(fallback, activePlayers), decodingUsed: "utf-8" };
+  return { ...parseResultsCsv(fallback, activePlayers, options), decodingUsed: "utf-8" };
 }
