@@ -98,6 +98,19 @@ export default function Home() {
   // --- KIRJAUTUMISEN SEURANTA ---
   useEffect(() => {
     let cancelled = false;
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (!isRefreshTokenAuthError(event.reason)) return;
+      // Supabase voi heittää tämän unhandled-rejectionina vanhasta local refresh tokenista.
+      // Estetään turha konsolivirhe ja palautetaan appi kirjautumattomaan tilaan.
+      event.preventDefault();
+      void (async () => {
+        await recoverFromStaleSupabaseAuth();
+        if (cancelled) return;
+        setUser(null);
+        setLoading(false);
+      })();
+    };
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
 
     void (async () => {
       const { data: { session }, error } = await supabase.auth.getSession();
@@ -128,6 +141,7 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
       subscription.unsubscribe();
     };
   }, []);
@@ -197,7 +211,7 @@ export default function Home() {
 
   async function startNewTournament() {
     if (!activeTournament) return;
-    
+
     // Tarkistetaan nimen tilanne
     let kisanNimi = activeTournament.name;
     if (!kisanNimi || kisanNimi === 'Uusi Turnaus') {
@@ -207,23 +221,33 @@ export default function Home() {
     }
 
     const confirmStart = confirm(`Arkistoidaanko kisa nimellä "${kisanNimi}"? Tämä tyhjentää pelaajien pisteet ja kaikkien joukkueet.`);
-    
-    if (confirmStart) {
+
+    if (!confirmStart) return;
+
+    try {
       const archiveData: any[] = [];
-      const { data: currentPicks } = await supabase.from('picks').select('*');
-      
+      const { data: currentPicks, error: picksReadErr } = await supabase.from('picks').select('*');
+      if (picksReadErr) {
+        alert('Valintojen lukeminen epäonnistui: ' + formatSupabaseErr(picksReadErr));
+        return;
+      }
+
       if (currentPicks && currentPicks.length > 0) {
-        currentPicks.forEach(pick => {
-          const player = players.find(p => p.id === pick.player_id);
-          const profile = profiles.find(pr => pr.id === pick.user_id);
-          
+        currentPicks.forEach((pick) => {
+          const player = players.find((p) => p.id === pick.player_id);
+          const profile = profiles.find((pr) => pr.id === pick.user_id);
+
           if (player && profile) {
-            // Lasketaan pisteet arkistoon
             const par = Number(player.par_score) || 0;
-            const pts = (par < 0 ? Math.abs(par) * 2 : par * -1) + (Number(player.rounds_played) * 2) + (Number(player.hot_rounds) * 5) + (Number(player.hio_count) * 30) + (Number(player.position_bonus) || 0);
+            const pts =
+              (par < 0 ? Math.abs(par) * 2 : par * -1) +
+              Number(player.rounds_played) * 2 +
+              Number(player.hot_rounds) * 5 +
+              Number(player.hio_count) * 30 +
+              (Number(player.position_bonus) || 0);
 
             archiveData.push({
-              tournament_name: kisanNimi, // Käytetään oikeaa nimeä
+              tournament_name: kisanNimi,
               manager_name: profile.full_name || 'Tuntematon',
               team_name: profile.team_name || 'Nimetön tiimi',
               user_id: pick.user_id,
@@ -231,17 +255,14 @@ export default function Home() {
               player_score: player.par_score,
               player_rounds: player.rounds_played,
               earned_points: pts,
-              buy_price: pick.buy_price ?? null
+              buy_price: pick.buy_price ?? null,
             });
           }
         });
         if (archiveData.length > 0) {
           const missingColumnErr = (err: { message?: string } | null, col: string) => {
             const m = (err?.message || '').toLowerCase();
-            return (
-              m.includes(col) &&
-              (m.includes('column') || m.includes('schema') || m.includes('not exist'))
-            );
+            return m.includes(col) && (m.includes('column') || m.includes('schema') || m.includes('not exist'));
           };
           let batch: any[] = archiveData;
           let insErr = (await supabase.from('tournament_results').insert(batch)).error;
@@ -253,12 +274,25 @@ export default function Home() {
             batch = batch.map(({ buy_price, ...rest }) => rest);
             insErr = (await supabase.from('tournament_results').insert(batch)).error;
           }
-          if (insErr) throw insErr;
+          if (insErr) {
+            const errText = formatSupabaseErr(insErr);
+            const lower = errText.toLowerCase();
+            const schemaHint =
+              lower.includes('column') || lower.includes('schema cache')
+                ? '\n\nTietokannasta puuttuu sarake (tai skeema on vanhentunut). Lisää esim. SQL Editorissa:\nALTER TABLE public.tournament_results ADD COLUMN IF NOT EXISTS earned_points integer;\n(tai aja repo: supabase/migrations/20260408_tournament_results_earned_points.sql)'
+                : '';
+            const rlsHint =
+              !schemaHint &&
+              (lower.includes('policy') || lower.includes('permission') || lower.includes('rls'))
+                ? '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää INSERT tournament_results -käytäntö admin-käyttäjälle.'
+                : '';
+            alert('Historiikkiin tallennus epäonnistui: ' + errText + schemaHint + rlsHint);
+            return;
+          }
         }
       }
 
-      // Nollataan pelaajien tiedot ja poistetaan valinnat
-      await supabase
+      const { error: playersErr } = await supabase
         .from('players')
         .update({
           points: 0,
@@ -270,13 +304,42 @@ export default function Home() {
           round_breakdown: null,
         })
         .neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('picks').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      
-      // Palautetaan turnauksen nimi alkutilaan
-      await supabase.from('tournaments').update({ is_locked: false, name: 'Uusi Turnaus' }).eq('id', activeTournament.id);
+      if (playersErr) {
+        alert(
+          'Pelaajien nollaus epäonnistui: ' +
+            formatSupabaseErr(playersErr) +
+            '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää Supabaseen UPDATE-oikeus players-tauluun (tai service role -edge).'
+        );
+        return;
+      }
+
+      const { error: deletePicksErr } = await supabase.from('picks').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (deletePicksErr) {
+        alert(
+          'Valintojen poisto epäonnistui: ' +
+            formatSupabaseErr(deletePicksErr) +
+            '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää Supabaseen DELETE-oikeus picks-tauluun.'
+        );
+        return;
+      }
+
+      const { error: tournamentErr } = await supabase
+        .from('tournaments')
+        .update({ is_locked: false, name: 'Uusi Turnaus' })
+        .eq('id', activeTournament.id);
+      if (tournamentErr) {
+        alert(
+          'Turnauksen päivitys epäonnistui: ' +
+            formatSupabaseErr(tournamentErr) +
+            '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää Supabaseen UPDATE-oikeus tournaments-tauluun.'
+        );
+        return;
+      }
 
       alert(`Kisa "${kisanNimi}" arkistoitu onnistuneesti!`);
       loadData();
+    } catch (e) {
+      alert('Uuden kisan aloitus epäonnistui: ' + formatSupabaseErr(e));
     }
   }
 
@@ -1272,7 +1335,7 @@ export default function Home() {
       )}
 
       {mainTab === 'rules' && (
-        <section className="pm-section">
+        <section className="pm-section pm-rules-section">
           <div className="pm-toolbar">
             <div>
               <h2 className="pm-title">Pelinsäännöt</h2>
@@ -1282,47 +1345,51 @@ export default function Home() {
 
           <div className="pm-grid">
             <div className="col-span-full">
-              <div className="space-y-4">
-                <article className="pm-card pm-card--stack">
-                  <div className="pm-row-dense">
+              <div className="pm-rules-stack">
+                <article className="pm-card pm-card--stack pm-rules-card">
+                  <div className="pm-row-dense pm-rules-card-head">
                     <span className="pm-avatar" aria-hidden>
                       👥
                     </span>
                     <h3 className="pm-name">Joukkueen rakenne</h3>
                   </div>
-                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                  <ul className="pm-rules-list">
                     <li>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</li>
                     <li>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</li>
                   </ul>
                 </article>
 
-                <article className="pm-card pm-card--stack">
-                  <div className="pm-row-dense">
+                <article className="pm-card pm-card--stack pm-rules-card pm-rules-card--scoring">
+                  <div className="pm-row-dense pm-rules-card-head">
                     <span className="pm-avatar" aria-hidden>
                       🎯
                     </span>
-                    <h3 className="pm-name">Heittokohtainen pisteytys</h3>
+                    <h3 className="pm-name">Kierrostuloksen pisteytys (heittäjälle)</h3>
                   </div>
-                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
-                    <li>
-                      <span className="font-extrabold text-white/90">Miinusheitot (-):</span> Jokainen heitto alle parin tuo 2 pistettä.
-                      (Esim. Birdie = 2p, Eagle = 4p).
+                  <ul className="pm-rules-list pm-rules-list--scoring">
+                    <li className="pm-rules-scoring-core">
+                      <span className="font-extrabold text-white/90">Kierrostulos -1:</span> heittäjälle +2 pistettä
                     </li>
-                    <li>
-                      <span className="font-extrabold text-white/90">Plusheitot (+):</span> Jokainen heitto yli parin tuo -1 pistettä.
-                      (Esim. Bogey = -1p, Tuplabogey = -2p).
+                    <li className="pm-rules-scoring-core">
+                      <span className="font-extrabold text-white/90">Kierrostulos +1:</span> heittäjälle -1 piste
+                    </li>
+                    <li className="pm-rules-scoring-example">
+                      <span className="font-extrabold text-white/90">Esimerkki:</span> kierrostulos -4 = heittäjälle +8 pistettä
+                    </li>
+                    <li className="pm-rules-scoring-example">
+                      <span className="font-extrabold text-white/90">Esimerkki:</span> kierrostulos +2 = heittäjälle -2 pistettä
                     </li>
                   </ul>
                 </article>
 
-                <article className="pm-card pm-card--stack">
-                  <div className="pm-row-dense">
+                <article className="pm-card pm-card--stack pm-rules-card">
+                  <div className="pm-row-dense pm-rules-card-head">
                     <span className="pm-avatar" aria-hidden>
                       ⛳
                     </span>
                     <h3 className="pm-name">Kierros- ja suorituspisteet</h3>
                   </div>
-                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                  <ul className="pm-rules-list">
                     <li>
                       <span className="font-extrabold text-white/90">Pelikierrokset:</span> Jokainen pelattu kierros tuo 2 pistettä. (Esim.
                       cutista selviäminen kerryttää pistepottia).
@@ -1336,14 +1403,14 @@ export default function Home() {
                   </ul>
                 </article>
 
-                <article className="pm-card pm-card--stack">
-                  <div className="pm-row-dense">
+                <article className="pm-card pm-card--stack pm-rules-card">
+                  <div className="pm-row-dense pm-rules-card-head">
                     <span className="pm-avatar" aria-hidden>
                       🏆
                     </span>
                     <h3 className="pm-name">Sijoitusbonukset</h3>
                   </div>
-                  <ul className="mt-3 space-y-2 text-sm leading-relaxed text-white/70 list-disc pl-5">
+                  <ul className="pm-rules-list">
                     <li>1. sija: 10 pistettä</li>
                     <li>2.–3. sijat: 5 pistettä</li>
                     <li>4.–10. sijat: 2 pistettä</li>

@@ -135,7 +135,7 @@ function TournamentPickRows({
                 breakdown={breakdown}
                 storedPoints={storedPts}
                 summaryLabel="Piste-erittely"
-                className="pm-roster-player-breakdown mt-2 border-0 pt-2"
+                className="mt-2"
               />
             )}
           </div>

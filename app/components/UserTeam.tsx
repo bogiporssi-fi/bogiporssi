@@ -125,7 +125,7 @@ export default function UserTeam({
                 <PlayerPointsBreakdownPanel
                   breakdown={breakdown}
                   storedPoints={storedPts}
-                  className="mt-3 border-t border-white/10 pt-2"
+                  className="mt-2"
                 />
               )}
             </article>

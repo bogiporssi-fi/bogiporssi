@@ -113,6 +113,21 @@ function parseIntCell(v: string, defaultVal = 0): number {
   return Number.isFinite(n) ? n : defaultVal;
 }
 
+/**
+ * Kierroskohtaisissa kentissä erotellaan puuttuva arvo (null) ja oikea numero.
+ * Tämä estää esim. "-", "WD", "DNS" tms. laskemasta kierrosta pelatuksi.
+ */
+function parseIntCellOrNull(v: string): number | null {
+  const s = v
+    .trim()
+    .replace(/[\u2212\u2013\u2014]/g, "-")
+    .replace(",", ".");
+  if (s === "" || s === "-") return null;
+  if (/^(wd|dns|dnf|dq|mc)$/i.test(s)) return null;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 function parseRatingCell(v: string, fallback: number): number {
   const s = v.trim().replace(",", ".");
   if (s === "" || s === "-") return fallback;
@@ -365,9 +380,8 @@ export function parseResultsCsv(
         const ri = rdMaps.roundRdIndex.get(n);
         if (ri === undefined) continue;
         const rdCell = cells[ri] ?? "";
-        if (rdCell.trim() === "") continue;
-
-        const strokes = parseIntCell(rdCell, 0);
+        const strokes = parseIntCellOrNull(rdCell);
+        if (strokes == null) continue;
         const parDelta = strokes - roundParStrokes;
 
         const hi = rdMaps.roundHotIndex.get(n);
@@ -375,8 +389,8 @@ export function parseResultsCsv(
         const hotCell = hi !== undefined && hi < cells.length ? cells[hi] ?? "" : "";
         const hioCell = ho !== undefined && ho < cells.length ? cells[ho] ?? "" : "";
 
-        const hotN = Math.min(9, Math.max(0, parseIntCell(hotCell, 0)));
-        const hioN = Math.min(9, Math.max(0, parseIntCell(hioCell, 0)));
+        const hotN = Math.min(9, Math.max(0, parseIntCellOrNull(hotCell) ?? 0));
+        const hioN = Math.min(9, Math.max(0, parseIntCellOrNull(hioCell) ?? 0));
 
         rb.push({
           n,
@@ -405,15 +419,18 @@ export function parseResultsCsv(
         const hotCell = hi !== undefined && hi < cells.length ? cells[hi] ?? "" : "";
         const hioCell = ho !== undefined && ho < cells.length ? cells[ho] ?? "" : "";
 
-        if (parCell.trim() === "" && hotCell.trim() === "" && hioCell.trim() === "") {
+        const parN = parseIntCellOrNull(parCell);
+        const hotN = parseIntCellOrNull(hotCell);
+        const hioN = parseIntCellOrNull(hioCell);
+        if (parN == null && hotN == null && hioN == null) {
           continue;
         }
 
         rb.push({
           n,
-          par: parseIntCell(parCell, 0),
-          hot: parseIntCell(hotCell, 0),
-          hio: parseIntCell(hioCell, 0),
+          par: parN ?? 0,
+          hot: hotN ?? 0,
+          hio: hioN ?? 0,
         });
       }
 

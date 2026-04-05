@@ -21,10 +21,12 @@ export default function PlayerPointsBreakdownPanel({
   const mismatch =
     storedPoints != null && Math.abs(b.computedTotal - storedPoints) > 0.5;
   const roundsDetail = b.roundsDetail;
+  const hasRounds = !!(roundsDetail && roundsDetail.length > 0);
+  const fmtPts = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
   return (
     <div className="w-full min-w-0">
-      {roundsDetail && roundsDetail.length > 0 && (
+      {hasRounds && (
         <div className="pm-player-breakdown-chips" aria-label="Kierrosten pisteet yhteenveto">
           {roundsDetail.map((rd, i) => (
             <span key={rd.n}>
@@ -36,78 +38,76 @@ export default function PlayerPointsBreakdownPanel({
         </div>
       )}
       <details className={["pm-player-breakdown w-full min-w-0", className].filter(Boolean).join(" ")}>
-      <summary className="pm-player-breakdown-summary">{summaryLabel}</summary>
-      {roundsDetail && roundsDetail.length > 0 && (
-        <div className="pm-player-breakdown-rounds">
-          <div className="pm-player-breakdown-rounds-title">Kierrokset</div>
-          {roundsDetail.map((rd) => (
-            <div key={rd.n} className="pm-player-breakdown-round-block">
-              <div className="pm-player-breakdown-round-label">Kierros {rd.n}</div>
-              <ul className="pm-player-breakdown-sublist">
-                <li>
-                  Miinus-/plusheitot (par {rd.par}):{" "}
-                  <span className="font-extrabold tabular-nums text-sky-200/90">{rd.parPts} p</span>
-                </li>
-                <li>
-                  Pelattu kierros (1 × 2):{" "}
-                  <span className="font-extrabold tabular-nums text-sky-200/90">{rd.roundsPts} p</span>
-                </li>
-                {rd.hot > 0 && (
-                  <li>
-                    Hot ({rd.hot} × 5):{" "}
-                    <span className="font-extrabold tabular-nums text-sky-200/90">{rd.hotPts} p</span>
-                  </li>
-                )}
-                {rd.hio > 0 && (
-                  <li>
-                    Hole-in-one ({rd.hio} × 30):{" "}
-                    <span className="font-extrabold tabular-nums text-sky-200/90">{rd.hioPts} p</span>
-                  </li>
-                )}
-                <li className="pm-player-breakdown-round-subtotal">
-                  Kierros yhteensä:{" "}
-                  <span className="font-extrabold tabular-nums text-amber-200/90">{rd.subtotal} p</span>
-                </li>
-              </ul>
+        <summary className="pm-player-breakdown-summary">{summaryLabel}</summary>
+        {hasRounds && (
+          <div className="pm-player-breakdown-rounds">
+            <div className="pm-player-breakdown-rounds-title">Kierrokset</div>
+            <div className="pm-breakdown-table-wrap">
+              <table className="pm-breakdown-table" aria-label="Kierroskohtaiset pisteet">
+                <thead>
+                  <tr>
+                    <th scope="col">K</th>
+                    <th scope="col">Par</th>
+                    <th scope="col">Krs</th>
+                    <th scope="col">Hot</th>
+                    <th scope="col">HIO</th>
+                    <th scope="col">Yht.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roundsDetail.map((rd) => (
+                    <tr key={rd.n}>
+                      <td className="pm-breakdown-col-k">K{rd.n}</td>
+                      <td>
+                        <span className="pm-breakdown-par-note">({rd.par}) </span>
+                        <span className="pm-breakdown-val">{fmtPts(rd.parPts)}</span>
+                      </td>
+                      <td className="pm-breakdown-val">{fmtPts(rd.roundsPts)}</td>
+                      <td className="pm-breakdown-val">{fmtPts(rd.hotPts)}</td>
+                      <td className="pm-breakdown-val">{fmtPts(rd.hioPts)}</td>
+                      <td className="pm-breakdown-val pm-breakdown-val-total">{fmtPts(rd.subtotal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
-      )}
-      <ul className="pm-player-breakdown-list">
-        {roundsDetail && roundsDetail.length > 0 && (
-          <li className="pm-player-breakdown-yhteenveto-label">Koko kisa (yhteenveto)</li>
+          </div>
         )}
-        <li>
-          Miinus-/plusheitot (par {b.parScore}):{" "}
-          <span className="font-extrabold tabular-nums text-sky-200/90">{b.parPts} p</span>
-        </li>
-        <li>
-          Pelatut kierrokset ({b.roundsPlayed} × 2):{" "}
-          <span className="font-extrabold tabular-nums text-sky-200/90">{b.roundsPts} p</span>
-        </li>
-        <li>
-          Hot round ({b.hotRounds} × 5):{" "}
-          <span className="font-extrabold tabular-nums text-sky-200/90">{b.hotPts} p</span>
-        </li>
-        <li>
-          Hole-in-one ({b.hioCount} × 30):{" "}
-          <span className="font-extrabold tabular-nums text-sky-200/90">{b.hioPts} p</span>
-        </li>
-        <li>
-          Sijoitusbonus:{" "}
-          <span className="font-extrabold tabular-nums text-sky-200/90">{b.positionPts} p</span>
-        </li>
-        <li className="pm-player-breakdown-total">
-          Laskettu yhteensä:{" "}
-          <span className="font-extrabold tabular-nums text-amber-200/95">{b.computedTotal} p</span>
-        </li>
-      </ul>
-      {mismatch && storedPoints != null && (
-        <p className="pm-player-breakdown-note">
-          Tallennettu pistesaldo: {storedPoints} p (jos ero, admin-tuonti voi olla päivittämättä kaikkia kenttiä.)
-        </p>
-      )}
-    </details>
+        <ul className="pm-player-breakdown-list">
+          {hasRounds && (
+            <li className="pm-player-breakdown-yhteenveto-label">Koko kisa</li>
+          )}
+          <li>
+            Miinus-/plusheitot (par {b.parScore}):{" "}
+            <span className="font-extrabold tabular-nums text-sky-200/90">{b.parPts} p</span>
+          </li>
+          <li>
+            Pelatut kierrokset ({b.roundsPlayed} × 2):{" "}
+            <span className="font-extrabold tabular-nums text-sky-200/90">{b.roundsPts} p</span>
+          </li>
+          <li>
+            Hot round ({b.hotRounds} × 5):{" "}
+            <span className="font-extrabold tabular-nums text-sky-200/90">{b.hotPts} p</span>
+          </li>
+          <li>
+            Hole-in-one ({b.hioCount} × 30):{" "}
+            <span className="font-extrabold tabular-nums text-sky-200/90">{b.hioPts} p</span>
+          </li>
+          <li>
+            Sijoitusbonus:{" "}
+            <span className="font-extrabold tabular-nums text-sky-200/90">{b.positionPts} p</span>
+          </li>
+          <li className="pm-player-breakdown-total">
+            Laskettu yhteensä:{" "}
+            <span className="font-extrabold tabular-nums text-amber-200/95">{b.computedTotal} p</span>
+          </li>
+        </ul>
+        {mismatch && storedPoints != null && (
+          <p className="pm-player-breakdown-note">
+            Tallennettu pistesaldo: {storedPoints} p (jos ero, admin-tuonti voi olla päivittämättä kaikkia kenttiä.)
+          </p>
+        )}
+      </details>
     </div>
   );
 }

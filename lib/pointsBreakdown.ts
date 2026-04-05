@@ -38,12 +38,20 @@ export function parPtsFromPar(par: number): number {
 }
 
 export function buildRoundDetailLines(stored: RoundBreakdownStored): RoundDetailLine[] {
+  let cumulativePar = 0;
   return stored.map((r) => {
-    const parPts = parPtsFromPar(r.par);
+    let parPts = parPtsFromPar(r.par);
+    // Kierroskohtainen erityissääntö:
+    // jos pelaaja on ennen kierrosta miinuksen puolella ja kierros on plussaa,
+    // plussa rankaistaan tuplana (esim. +2 => -4).
+    if (r.par > 0 && cumulativePar < 0) {
+      parPts = r.par * -2;
+    }
     const roundsPts = 2;
     const hotPts = r.hot * 5;
     const hioPts = r.hio * 30;
     const subtotal = parPts + roundsPts + hotPts + hioPts;
+    cumulativePar += r.par;
     return {
       n: r.n,
       par: r.par,

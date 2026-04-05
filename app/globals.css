@@ -1169,7 +1169,10 @@ body {
 }
 
 .pm-team-round-totals {
-  padding: 0.45rem 0.6rem;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: hidden;
+  padding: 0.38rem 0.52rem;
   border-radius: 0.5rem;
   border: 1px solid rgba(52, 211, 153, 0.28);
   background: rgba(52, 211, 153, 0.07);
@@ -1177,24 +1180,27 @@ body {
 
 .pm-team-round-totals-label {
   display: block;
-  font-size: 0.625rem;
+  font-size: 0.58rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.48);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.24rem;
 }
 
 .pm-team-round-totals-chips {
-  font-size: 0.6875rem;
-  line-height: 1.45;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.28rem;
+  font-size: 0.64rem;
+  line-height: 1.35;
   color: rgba(255, 255, 255, 0.78);
 }
 
 /* Tulokset > Joukkueet: vastustajan roster — joukkue/kierros selvästi esiin */
 .pm-team-round-totals--roster {
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.65rem;
+  padding: 0.52rem 0.62rem;
+  border-radius: 0.58rem;
   border: 1px solid rgba(52, 211, 153, 0.38);
   background: linear-gradient(
     165deg,
@@ -1206,18 +1212,18 @@ body {
 }
 
 .pm-team-round-totals--roster .pm-team-round-totals-label {
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
   color: rgba(167, 243, 208, 0.95);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.28rem;
 }
 
 .pm-team-round-totals--roster .pm-team-round-totals-chips {
-  font-size: 0.8125rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
   color: rgba(255, 255, 255, 0.92);
-  line-height: 1.55;
+  line-height: 1.38;
 }
 
 /* Rosterin pelaajarivit: ei valkoista reunaviivaa, vain kevyt tausta */
@@ -1225,29 +1231,6 @@ body {
   background: rgba(255, 255, 255, 0.035);
   border: none;
   box-shadow: none;
-}
-
-.pm-player-breakdown.pm-roster-player-breakdown {
-  border: none;
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 0.5rem;
-}
-
-.pm-roster-pick-row .pm-player-breakdown-chips {
-  border-color: rgba(255, 255, 255, 0.05);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.pm-player-breakdown.pm-roster-player-breakdown .pm-player-breakdown-rounds {
-  border-bottom-color: rgba(255, 255, 255, 0.04);
-}
-
-.pm-player-breakdown.pm-roster-player-breakdown .pm-player-breakdown-yhteenveto-label {
-  border-top-color: rgba(255, 255, 255, 0.05);
-}
-
-.pm-player-breakdown.pm-roster-player-breakdown .pm-player-breakdown-total {
-  border-top-color: rgba(255, 255, 255, 0.05);
 }
 
 .pm-player-breakdown-chips {
@@ -1295,38 +1278,70 @@ body {
   margin-bottom: 0.35rem;
 }
 
-.pm-player-breakdown-round-block {
-  margin: 0.4rem 0 0;
-  padding-left: 0.45rem;
-  border-left: 2px solid rgba(52, 211, 153, 0.35);
+.pm-breakdown-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.pm-player-breakdown-round-block:first-of-type {
-  margin-top: 0;
-}
-
-.pm-player-breakdown-round-label {
-  font-weight: 800;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 0.6875rem;
-}
-
-.pm-player-breakdown-sublist {
-  margin: 0.15rem 0 0;
-  padding-left: 0.85rem;
-  list-style: disc;
-  font-size: 0.625rem;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.68);
-}
-
-.pm-player-breakdown-round-subtotal {
-  margin-top: 0.2rem;
-  list-style: none;
-  margin-left: -0.85rem;
-  padding-left: 0;
+.pm-breakdown-table {
+  width: 100%;
+  min-width: 22rem;
+  border-collapse: collapse;
+  font-size: 0.62rem;
+  line-height: 1.25;
   color: rgba(255, 255, 255, 0.78);
-  font-weight: 600;
+}
+
+.pm-breakdown-table thead th {
+  padding: 0.28rem 0.35rem;
+  text-align: right;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pm-breakdown-table thead th:first-child {
+  text-align: left;
+}
+
+.pm-breakdown-table tbody td {
+  padding: 0.28rem 0.35rem;
+  text-align: right;
+  white-space: nowrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-breakdown-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.pm-breakdown-col-k {
+  text-align: left !important;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: rgba(167, 243, 208, 0.92);
+}
+
+.pm-breakdown-par-note {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.55rem;
+}
+
+.pm-breakdown-val {
+  font-weight: 800;
+  color: rgba(186, 230, 253, 0.94);
+}
+
+.pm-breakdown-val-total {
+  color: rgba(251, 191, 36, 0.95);
 }
 
 .pm-player-breakdown-yhteenveto-label {
@@ -1375,4 +1390,77 @@ body {
   font-size: 0.625rem;
   line-height: 1.4;
   color: rgba(251, 191, 36, 0.65);
+}
+
+/* Rules tab polish (scoped) */
+.pm-rules-section .pm-toolbar {
+  margin-bottom: 0.8rem;
+}
+
+.pm-rules-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.pm-rules-card {
+  padding: 13px 14px 14px;
+  border-color: rgba(255, 255, 255, 0.14);
+  border-left: 3px solid rgba(52, 211, 153, 0.75);
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.14) 0%, rgba(255, 255, 255, 0.03) 55%, rgba(255, 255, 255, 0.02) 100%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.pm-rules-card-head {
+  gap: 8px;
+}
+
+.pm-rules-card-head .pm-name {
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+}
+
+.pm-rules-list {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.48rem;
+  padding-left: 1.05rem;
+  list-style: disc;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.pm-rules-list li::marker {
+  color: rgba(52, 211, 153, 0.65);
+}
+
+.pm-rules-card--scoring {
+  border-color: rgba(52, 211, 153, 0.5);
+  border-left-color: rgba(251, 191, 36, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.18), 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.pm-rules-list--scoring {
+  gap: 0.34rem;
+}
+
+.pm-rules-scoring-core {
+  font-size: 0.86rem;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  padding: 0.32rem 0.52rem;
+  list-style: none;
+  margin-left: -0.85rem;
+}
+
+.pm-rules-scoring-example {
+  color: rgba(253, 230, 138, 0.95);
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  border-radius: 8px;
+  padding: 0.28rem 0.48rem;
+  list-style: none;
+  margin-left: -0.85rem;
 }
