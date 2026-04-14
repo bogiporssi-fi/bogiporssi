@@ -12,15 +12,27 @@ import TeamLogo from './components/TeamLogo';
 import { parseTeamLogoId } from '../lib/teamLogos';
 import { decodeAndParseResultsCsv } from '../lib/csvResultImport';
 import type { RoundBreakdownStored } from '../lib/roundBreakdown';
+import { getPickPointsFromPick } from '../lib/pickPoints';
+import {
+  buildHistoryBucketLabels,
+  currentSeasonBucket,
+  historySeasonBucket,
+  sortSeasonBucketsDescending,
+} from '../lib/seasonSegment';
+import { historyRowsForDisplay } from '../lib/archiveDisplay';
+import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib/hofSeasonStats';
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
 
 // ADMIN-TUNNUS
 const ADMIN_EMAIL = 'kimmo@gmail.com';
 
-// HINNOITTELUKAAVA: (Rating - 950) * 2600
+const MIN_PLAYER_PRICE = 80_000;
+
+// HINNOITTELUKAAVA: max(80 000, (Rating - 950) * 2600)
 const getPrice = (rating: number) => {
   const diff = rating - 950;
-  return diff > 0 ? diff * 2600 : 0;
+  const computed = diff > 0 ? diff * 2600 : 0;
+  return Math.max(MIN_PLAYER_PRICE, computed);
 };
 
 function formatMoneyFi(n: number) {
@@ -58,6 +70,15 @@ function formatSupabaseErr(err: unknown): string {
   );
 }
 
+/** Sama joukkue valittujen pelaajien kannalta (järjestys ei vaikuta) — pelaajatorin luonnoksen säilytys loadData()-kutsuilla. */
+function teamPickIdsSignature(teamPicks: any[]): string {
+  return teamPicks
+    .map((pick: any) => String(pick?.player_id ?? ''))
+    .filter((id) => id.length > 0)
+    .sort()
+    .join('|');
+}
+
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 const LOGO_MIME_TO_EXT: Record<string, string> = {
   'image/png': 'png',
@@ -77,6 +98,7 @@ export default function Home() {
   const [players, setPlayers] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [team, setTeam] = useState<any[]>([]); // Tämä on käyttäjän oma joukkue
+  const [draftTeam, setDraftTeam] = useState<any[]>([]); // Pelaajatorin luonnos (tallennetaan erikseen)
   const [allTeamsPicks, setAllTeamsPicks] = useState<any[]>([]); // Vakoilua varten
   const [history, setHistory] = useState<any[]>([]);
   
@@ -92,6 +114,8 @@ export default function Home() {
   const [teamLogoPath, setTeamLogoPath] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const teamLogoFileRef = useRef<HTMLInputElement>(null);
+  /** Estää tyhjän React-luonnoksen ([] vs. DB-joukkue) sekoittumisen tallentamattomaan luonnokseen ensihaun yhteydessä. */
+  const draftHydratedForUserRef = useRef<string | null>(null);
 
   const BUDGET = 1000000;
 
@@ -106,6 +130,7 @@ export default function Home() {
       void (async () => {
         await recoverFromStaleSupabaseAuth();
         if (cancelled) return;
+        draftHydratedForUserRef.current = null;
         setUser(null);
         setLoading(false);
       })();
@@ -118,6 +143,7 @@ export default function Home() {
       if (error && isRefreshTokenAuthError(error)) {
         await recoverFromStaleSupabaseAuth();
         if (cancelled) return;
+        draftHydratedForUserRef.current = null;
         setUser(null);
         setLoading(false);
         return;
@@ -135,6 +161,7 @@ export default function Home() {
       if (session?.user) {
         loadData();
       } else {
+        draftHydratedForUserRef.current = null;
         setLoading(false);
       }
     });
@@ -166,16 +193,22 @@ export default function Home() {
       if (hist) setHistory(hist);
 
       // 3. Haetaan valinnat ja LIIMATAAN pelaajatiedot niihin heti
-      const picksQuery = supabase.from('picks').select('*');
-      // Jos turnaus on olemassa, haetaan oletuksena vain aktiivisen turnauksen valinnat
-      const { data: allPicksRaw } = t?.id ? await picksQuery.eq('tournament_id', t.id) : await picksQuery;
+      // Ilman turnauksen id:tä EI haeta koko picks-taulua — muuten Tulokset näyttää kaikkien kisojen vanhat joukkueet.
+      const { data: allPicksRaw } =
+        t?.id != null && String(t.id) !== ''
+          ? await supabase.from('picks').select('*').eq('tournament_id', t.id)
+          : { data: [] as any[] | null };
       
-      const allPicksWithPlayers = (allPicksRaw || []).map(pick => {
-        const playerDetails = allPlayers.find(pl => pl.id === pick.player_id);
+      const scopedRaw =
+        t?.id != null && String(t.id) !== ''
+          ? (allPicksRaw || []).filter((pick: any) => String(pick.tournament_id ?? '') === String(t.id))
+          : [];
+      const allPicksWithPlayers = scopedRaw.map((pick) => {
+        const playerDetails = allPlayers.find((pl) => pl.id === pick.player_id);
         return {
           ...pick,
           players: playerDetails, // Supabase-tyylinen liitos
-          ...playerDetails        // Litteä tyyli (nimi, rating jne. suoraan tässä)
+          ...playerDetails, // Litteä tyyli (nimi, rating jne. suoraan tässä)
         };
       });
 
@@ -185,6 +218,7 @@ export default function Home() {
       const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
       if (sessionErr && isRefreshTokenAuthError(sessionErr)) {
         await recoverFromStaleSupabaseAuth();
+        draftHydratedForUserRef.current = null;
         setUser(null);
         return;
       }
@@ -192,14 +226,27 @@ export default function Home() {
       
       if (myId) {
         // Suodatetaan omat valinnat valmiiksi liimatusta listasta
-        const myTeam = allPicksWithPlayers.filter(pick => pick.user_id === myId);
+        const myTeam = allPicksWithPlayers.filter((pick) => pick.user_id === myId);
         setTeam(myTeam);
+        // Ensimmäinen täyttö: updater + ref(ref asetetaan updaterissa) tuplakutsutaan Strict Modessa → luonnos jäi [].
+        if (draftHydratedForUserRef.current !== myId) {
+          draftHydratedForUserRef.current = myId;
+          setDraftTeam(myTeam);
+        } else {
+          setDraftTeam((prev) =>
+            teamPickIdsSignature(prev) === teamPickIdsSignature(myTeam) ? myTeam : prev
+          );
+        }
 
         if (profs) {
           const myProfile = profs.find((pr: any) => pr.id === myId);
           if (myProfile?.team_name) setTeamNameInput(myProfile.team_name);
           setTeamLogoPath(typeof myProfile?.team_logo_path === 'string' ? myProfile.team_logo_path : null);
         }
+      } else {
+        draftHydratedForUserRef.current = null;
+        setTeam([]);
+        setDraftTeam([]);
       }
     } catch (error) {
       console.error("Nyt tuli virhe:", error);
@@ -225,15 +272,35 @@ export default function Home() {
     if (!confirmStart) return;
 
     try {
+      const missingColumnErr = (err: { message?: string } | null, col: string) => {
+        const m = (err?.message || '').toLowerCase();
+        return m.includes(col) && (m.includes('column') || m.includes('schema') || m.includes('not exist'));
+      };
+
       const archiveData: any[] = [];
-      const { data: currentPicks, error: picksReadErr } = await supabase.from('picks').select('*');
+      let picksRead = supabase.from('picks').select('*');
+      if (activeTournament.id != null && String(activeTournament.id) !== '') {
+        picksRead = picksRead.eq('tournament_id', activeTournament.id);
+      }
+      const { data: currentPicks, error: picksReadErr } = await picksRead;
       if (picksReadErr) {
         alert('Valintojen lukeminen epäonnistui: ' + formatSupabaseErr(picksReadErr));
         return;
       }
 
-      if (currentPicks && currentPicks.length > 0) {
-        currentPicks.forEach((pick) => {
+      const segmentEnding =
+        activeTournament.season_segment != null && Number.isFinite(Number(activeTournament.season_segment))
+          ? Number(activeTournament.season_segment)
+          : 1;
+
+      const tid = activeTournament.id != null && String(activeTournament.id) !== '' ? String(activeTournament.id) : '';
+      const picksForArchive =
+        tid && currentPicks?.length
+          ? currentPicks.filter((pick) => String(pick.tournament_id ?? '') === tid)
+          : currentPicks || [];
+
+      if (picksForArchive.length > 0) {
+        picksForArchive.forEach((pick) => {
           const player = players.find((p) => p.id === pick.player_id);
           const profile = profiles.find((pr) => pr.id === pick.user_id);
 
@@ -243,7 +310,7 @@ export default function Home() {
               (par < 0 ? Math.abs(par) * 2 : par * -1) +
               Number(player.rounds_played) * 2 +
               Number(player.hot_rounds) * 5 +
-              Number(player.hio_count) * 30 +
+              Number(player.hio_count) * 20 +
               (Number(player.position_bonus) || 0);
 
             archiveData.push({
@@ -256,14 +323,13 @@ export default function Home() {
               player_rounds: player.rounds_played,
               earned_points: pts,
               buy_price: pick.buy_price ?? null,
+              season_segment: segmentEnding,
+              hot_rounds: Number(player.hot_rounds) || 0,
+              hio_count: Number(player.hio_count) || 0,
             });
           }
         });
         if (archiveData.length > 0) {
-          const missingColumnErr = (err: { message?: string } | null, col: string) => {
-            const m = (err?.message || '').toLowerCase();
-            return m.includes(col) && (m.includes('column') || m.includes('schema') || m.includes('not exist'));
-          };
           let batch: any[] = archiveData;
           let insErr = (await supabase.from('tournament_results').insert(batch)).error;
           if (insErr && missingColumnErr(insErr, 'user_id')) {
@@ -274,12 +340,23 @@ export default function Home() {
             batch = batch.map(({ buy_price, ...rest }) => rest);
             insErr = (await supabase.from('tournament_results').insert(batch)).error;
           }
+          if (insErr && missingColumnErr(insErr, 'season_segment')) {
+            batch = batch.map(({ season_segment, ...rest }) => rest);
+            insErr = (await supabase.from('tournament_results').insert(batch)).error;
+          }
+          if (
+            insErr &&
+            (missingColumnErr(insErr, 'hot_rounds') || missingColumnErr(insErr, 'hio_count'))
+          ) {
+            batch = batch.map(({ hot_rounds, hio_count, ...rest }) => rest);
+            insErr = (await supabase.from('tournament_results').insert(batch)).error;
+          }
           if (insErr) {
             const errText = formatSupabaseErr(insErr);
             const lower = errText.toLowerCase();
             const schemaHint =
               lower.includes('column') || lower.includes('schema cache')
-                ? '\n\nTietokannasta puuttuu sarake (tai skeema on vanhentunut). Lisää esim. SQL Editorissa:\nALTER TABLE public.tournament_results ADD COLUMN IF NOT EXISTS earned_points integer;\n(tai aja repo: supabase/migrations/20260408_tournament_results_earned_points.sql)'
+                ? '\n\nTietokannasta puuttuu sarake (tai skeema on vanhentunut). Katso repo: supabase/migrations/.'
                 : '';
             const rlsHint =
               !schemaHint &&
@@ -313,7 +390,14 @@ export default function Home() {
         return;
       }
 
-      const { error: deletePicksErr } = await supabase.from('picks').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      let picksDelete = supabase.from('picks').delete();
+      if (activeTournament.id) {
+        picksDelete = picksDelete.eq('tournament_id', activeTournament.id);
+      } else {
+        picksDelete = picksDelete.neq('id', '00000000-0000-0000-0000-000000000000');
+      }
+      const expectedPickDeletes = picksForArchive.length;
+      const { data: deletedPicks, error: deletePicksErr } = await picksDelete.select('id');
       if (deletePicksErr) {
         alert(
           'Valintojen poisto epäonnistui: ' +
@@ -322,11 +406,29 @@ export default function Home() {
         );
         return;
       }
+      const removedCount = deletedPicks?.length ?? 0;
+      if (expectedPickDeletes > 0 && removedCount < expectedPickDeletes) {
+        alert(
+          `Varoitus: poistettiin vain ${removedCount} / ${expectedPickDeletes} pick-riviä. ` +
+            'Todennäköinen syy: RLS ei salli adminille kaikkien rivien DELETE:tä (katso migration 20260411_picks_admin_delete_policy.sql). ' +
+            'Pelaajat on jo nollattu ja turnaus päivitetään — tarkista picks-taulu ja korjaa policyt tai poista rivit käsin.'
+        );
+      }
 
-      const { error: tournamentErr } = await supabase
-        .from('tournaments')
-        .update({ is_locked: false, name: 'Uusi Turnaus' })
-        .eq('id', activeTournament.id);
+      let tournamentErr = (
+        await supabase
+          .from('tournaments')
+          .update({ is_locked: false, name: 'Uusi Turnaus', season_segment: segmentEnding + 1 })
+          .eq('id', activeTournament.id)
+      ).error;
+      if (tournamentErr && missingColumnErr(tournamentErr, 'season_segment')) {
+        tournamentErr = (
+          await supabase
+            .from('tournaments')
+            .update({ is_locked: false, name: 'Uusi Turnaus' })
+            .eq('id', activeTournament.id)
+        ).error;
+      }
       if (tournamentErr) {
         alert(
           'Turnauksen päivitys epäonnistui: ' +
@@ -398,7 +500,7 @@ export default function Home() {
     options?: { skipLoadData?: boolean; roundBreakdown?: RoundBreakdownStored | null }
   ): Promise<{ ok: boolean; message?: string }> {
     const scorePoints = par < 0 ? Math.abs(par) * 2 : par * -1;
-    const finalPoints = scorePoints + rounds * 2 + hot * 5 + hio * 30 + pos;
+    const finalPoints = scorePoints + rounds * 2 + hot * 5 + hio * 20 + pos;
     const payload: Record<string, unknown> = {
       par_score: par,
       rounds_played: rounds,
@@ -577,23 +679,71 @@ export default function Home() {
   const calculateTeamCost = (teamPicks: any[]) => {
     return teamPicks.reduce((acc, curr) => {
       const playerInfo = players.find(p => p.id === curr.player_id);
-      return acc + (curr.buy_price || getPrice(playerInfo?.official_rating || 950));
+      if (curr.buy_price !== null && curr.buy_price !== undefined && curr.buy_price !== '') {
+        return acc + Math.max(MIN_PLAYER_PRICE, Number(curr.buy_price) || 0);
+      }
+      return acc + getPrice(playerInfo?.official_rating || 950);
     }, 0);
   };
 
-  async function selectPlayer(pId: string, rating: number) {
+  function selectDraftPlayer(pId: string, rating: number) {
     if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
-    if (team.length >= 5) return alert("Tiimi on täynnä!");
+    if (draftTeam.length >= 5) return alert("Tiimi on täynnä!");
+    if (draftTeam.some((pick) => pick.player_id === pId)) return;
     const price = getPrice(rating);
-    if (calculateTeamCost(team) + price > BUDGET) return alert("Budjetti ei riitä!");
-    
-    await supabase.from('picks').insert([{ 
-      player_id: pId, 
-      user_id: user.id, 
-      tournament_id: activeTournament?.id, 
-      buy_price: price 
-    }]);
-    loadData();
+    if (calculateTeamCost(draftTeam) + price > BUDGET) return alert("Budjetti ei riitä!");
+
+    const pl = players.find((p: any) => p.id === pId);
+    setDraftTeam((prev) => [
+      ...prev,
+      {
+        id: `draft-${pId}`,
+        player_id: pId,
+        user_id: user?.id,
+        tournament_id: activeTournament?.id,
+        buy_price: price,
+        players: pl || null,
+        ...(pl || {}),
+      },
+    ]);
+  }
+
+  function removeDraftPlayer(pId: string) {
+    if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
+    setDraftTeam((prev) => prev.filter((pick) => pick.player_id !== pId));
+  }
+
+  async function saveDraftTeam() {
+    if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
+    if (!activeTournament?.id) return alert("Aktiivista turnausta ei löytynyt.");
+    if (!user?.id) return alert("Kirjaudu sisään tallentaaksesi joukkueen.");
+    if (draftTeam.length !== 5) return alert("Valitse täsmälleen 5 pelaajaa ennen tallennusta.");
+
+    const payload = draftTeam.map((pick: any) => ({
+      player_id: pick.player_id,
+      user_id: user.id,
+      tournament_id: activeTournament.id,
+      buy_price: Number(pick.buy_price) || 0,
+    }));
+
+    const del = await supabase
+      .from('picks')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('tournament_id', activeTournament.id);
+    if (del.error) {
+      alert('Joukkueen vanhojen valintojen poisto epäonnistui: ' + formatSupabaseErr(del.error));
+      return;
+    }
+
+    const ins = await supabase.from('picks').insert(payload);
+    if (ins.error) {
+      alert('Joukkueen tallennus epäonnistui: ' + formatSupabaseErr(ins.error));
+      return;
+    }
+
+    await loadData();
+    alert('Joukkue tallennettu!');
   }
 
   async function removePlayer(pId: string) {
@@ -693,19 +843,34 @@ export default function Home() {
     return pr?.team_name || pr?.email?.split('@')?.[0] || 'Tiimi';
   };
 
-  const getPickPoints = (pick: any) => {
-    if (pick?.earned_points !== null && pick?.earned_points !== undefined) return Number(pick.earned_points) || 0;
-    return Number(pick?.players?.points) || 0;
-  };
+  const getPickPoints = getPickPointsFromPick;
+
+  /** Tulostaulu / HoF / rosterit: vain rivit joiden tournament_id on aktiivinen kisa (vikasieto). */
+  const picksForActiveTournament =
+    activeTournament?.id != null && String(activeTournament.id) !== ''
+      ? allTeamsPicks.filter(
+          (p: any) => p.tournament_id != null && String(p.tournament_id) === String(activeTournament.id)
+        )
+      : [];
+
+  /** Ei näytetä tuloksissa / historiassa — vain HoF hot/hio -laskenta (lisätty Administa). */
+  const historyForDisplay = historyRowsForDisplay(history);
 
   const activeTournamentNameForStats = activeTournament?.name || 'Aktiivinen kisa';
+  const activeSeasonSegment =
+    activeTournament?.season_segment != null && Number.isFinite(Number(activeTournament.season_segment))
+      ? Number(activeTournament.season_segment)
+      : 1;
   const playerTournamentRows = buildPlayerTournamentRows(players);
-  const playerSeasonRows = buildPlayerSeasonRows(history, players, activeTournamentNameForStats);
+  const playerSeasonRows = buildPlayerSeasonRows(historyForDisplay, players, {
+    name: activeTournamentNameForStats,
+    seasonSegment: activeSeasonSegment,
+  });
 
   const tournamentBoard = (() => {
     const totals = new Map<string, number>();
     const lineups = new Map<string, Array<{ playerName: string; points: number }>>();
-    allTeamsPicks.forEach((pick: any) => {
+    picksForActiveTournament.forEach((pick: any) => {
       const uid = pick.user_id;
       if (!uid) return;
       const pts = getPickPoints(pick);
@@ -727,9 +892,8 @@ export default function Home() {
 
   const seasonBoard = (() => {
     /**
-     * Kausi = arkistoidut kisat + tämänhetkisen kisan pisteet.
-     * Avain: profiles.id (uuid), jotta nimen vaihto ei jaa pisteitä.
-     * Vanhat rivit ilman user_id: legacy:team_name (sama kuin ennen migraatiota).
+     * Kausi = arkistoidut osiot (season_segment / legacy-bucket) + aktiivinen osio.
+     * Turnausbucket ≠ pelkkä näyttönimi → ei tuplaa vaikka nimi toistuisi.
      */
     const LEGACY_PREFIX = 'legacy:';
     const stableKeyFromHistoryRow = (row: any) => {
@@ -738,52 +902,46 @@ export default function Home() {
       return `${LEGACY_PREFIX}${row.team_name || 'Nimetön tiimi'}`;
     };
 
+    const bucketLabels = buildHistoryBucketLabels(historyForDisplay, activeTournament);
+    const currentBucket = currentSeasonBucket(activeTournament);
+    const seenBuckets = new Set<string>();
+    historyForDisplay.forEach((row: any) => {
+      seenBuckets.add(historySeasonBucket(row));
+    });
+    seenBuckets.add(currentBucket);
+    const tournamentOrder = sortSeasonBucketsDescending([...seenBuckets], currentBucket);
+
     const totals = new Map<string, number>();
     const pointsByTeamAndTournament = new Map<string, Map<string, number>>();
-    const tournamentOrder: string[] = [];
-    const seenTournaments = new Set<string>();
 
-    const addTeamTournamentPts = (teamKey: string, tournamentName: string, pts: number) => {
+    const addTeamTournamentPts = (teamKey: string, tournamentBucket: string, pts: number) => {
       if (!pointsByTeamAndTournament.has(teamKey)) pointsByTeamAndTournament.set(teamKey, new Map());
       const m = pointsByTeamAndTournament.get(teamKey)!;
-      m.set(tournamentName, (m.get(tournamentName) || 0) + pts);
+      m.set(tournamentBucket, (m.get(tournamentBucket) || 0) + pts);
       totals.set(teamKey, (totals.get(teamKey) || 0) + pts);
     };
 
-    // 1) Arkistoidut kisat (history sisältää jo earned_points per pelaaja/tiimi)
-    history.forEach((row: any) => {
+    historyForDisplay.forEach((row: any) => {
       const teamKey = stableKeyFromHistoryRow(row);
-      const tournamentName = row.tournament_name || 'Tuntematon turnaus';
+      const b = historySeasonBucket(row);
       const pts = Number(row.earned_points) || 0;
-
-      addTeamTournamentPts(teamKey, tournamentName, pts);
-
-      if (!seenTournaments.has(tournamentName)) {
-        seenTournaments.add(tournamentName);
-        tournamentOrder.push(tournamentName);
-      }
+      addTeamTournamentPts(teamKey, b, pts);
     });
 
-    // 2) Tämänhetkinen aktiivinen kisa (allTeamsPicks = aktiivisen kisan picks)
-    const activeTournamentName = activeTournament?.name || 'Aktiivinen kisa';
-    if (!seenTournaments.has(activeTournamentName)) {
-      seenTournaments.add(activeTournamentName);
-      tournamentOrder.unshift(activeTournamentName);
-    }
-
-    allTeamsPicks.forEach((pick: any) => {
+    picksForActiveTournament.forEach((pick: any) => {
       const uid = pick.user_id;
       if (!uid) return;
-
-      const pts = getPickPoints(pick);
-      addTeamTournamentPts(uid, activeTournamentName, pts);
+      addTeamTournamentPts(uid, currentBucket, getPickPoints(pick));
     });
 
     return Array.from(totals.entries())
       .map(([key, pts]) => {
         const m = pointsByTeamAndTournament.get(key) || new Map<string, number>();
         const tournamentLines = tournamentOrder
-          .map((tName) => ({ tournamentName: tName, points: m.get(tName) || 0 }))
+          .map((b) => ({
+            tournamentName: bucketLabels.get(b) || b,
+            points: m.get(b) || 0,
+          }))
           .filter((line) => line.points !== 0);
 
         const isLegacy = key.startsWith(LEGACY_PREFIX);
@@ -803,6 +961,8 @@ export default function Home() {
   const hallOfFameItems = (() => {
     const fallback = 'Ei dataa vielä';
     const revealMostPopular = Boolean(activeTournament?.is_locked);
+    const hofBucketLabels = buildHistoryBucketLabels(historyForDisplay, activeTournament);
+    const hofCurrentBucket = currentSeasonBucket(activeTournament);
 
     const currentTeamNameByUid = (uid: string) => {
       const pr = profiles.find((p: any) => p.id === uid);
@@ -825,12 +985,12 @@ export default function Home() {
       const m = ptsByTeamAndPlayer.get(teamKey)!;
       m.set(playerName, (m.get(playerName) || 0) + pts);
     };
-    history.forEach((row: any) => {
+    historyForDisplay.forEach((row: any) => {
       const name = row.player_name;
       if (!name) return;
       addPtsHof(teamKeyFromHistoryRowHof(row), name, Number(row.earned_points) || 0);
     });
-    allTeamsPicks.forEach((pick: any) => {
+    picksForActiveTournament.forEach((pick: any) => {
       const uid = pick.user_id;
       if (!uid) return;
       const name = pick.players?.name;
@@ -858,25 +1018,18 @@ export default function Home() {
       `${idx + 2}. ${name} (${pts} p) — ${displayTeamKeyHof(teamKey)}`
     );
 
+    /** Hinta-laatusuhde: vain arkisto — ei nykyisiä valintoja (uusi kisa ei sekoita ostohintoja vs. pisteet). */
     const valueByPlayer = new Map<string, { points: number; price: number }>();
     const getPlayerPriceByName = (name: string) => {
       const pl = players.find((p: any) => p.name === name);
       return pl ? getPrice(Number(pl.official_rating) || 950) : 0;
     };
-    history.forEach((row: any) => {
+    historyForDisplay.forEach((row: any) => {
       const name = row.player_name;
       if (!name) return;
       const pts = Number(row.earned_points) || 0;
       // Uudemmissa arkistoissa buy_price on tallessa, vanhoissa arvioidaan ratingista
       const price = Number(row.buy_price) || getPlayerPriceByName(name);
-      const prev = valueByPlayer.get(name) || { points: 0, price: 0 };
-      valueByPlayer.set(name, { points: prev.points + pts, price: prev.price + price });
-    });
-    allTeamsPicks.forEach((pick: any) => {
-      const name = pick.players?.name;
-      if (!name) return;
-      const pts = getPickPoints(pick);
-      const price = Number(pick.buy_price) || getPlayerPriceByName(name);
       const prev = valueByPlayer.get(name) || { points: 0, price: 0 };
       valueByPlayer.set(name, { points: prev.points + pts, price: prev.price + price });
     });
@@ -900,34 +1053,56 @@ export default function Home() {
         `${idx + 2}. ${row.name} (${formatMoneyFi(Math.round(row.price / row.points))}\u00A0€ / piste)`
     );
 
-    const hotSorted = [...players]
-      .filter((p: any) => (Number(p.hot_rounds) || 0) > 0)
-      .sort((a, b) => (Number(b.hot_rounds) || 0) - (Number(a.hot_rounds) || 0));
+    const hotSeasonTotals = seasonHotTotalsByPlayerName(history, players);
+    const hotSorted = Array.from(hotSeasonTotals.entries())
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fi'))
+      .map(([name, hot_rounds]) => ({ name, hot_rounds }));
     const hotHero = hotSorted[0];
     const hotExpandLines = hotSorted.slice(1, 5).map(
-      (p: any, idx) => `${idx + 2}. ${p.name} (${p.hot_rounds} hot roundia)`
+      (p, idx) => `${idx + 2}. ${p.name} (${p.hot_rounds} hot roundia)`
     );
 
-    const hioSorted = [...players]
-      .filter((p: any) => (Number(p.hio_count) || 0) > 0)
-      .sort((a, b) => (Number(b.hio_count) || 0) - (Number(a.hio_count) || 0));
+    const hioSeasonTotals = seasonHioTotalsByPlayerName(history, players);
+    const hioSorted = Array.from(hioSeasonTotals.entries())
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fi'))
+      .map(([name, hio_count]) => ({ name, hio_count }));
     const hioKing = hioSorted[0];
     const hioExpandLines = hioSorted.slice(1, 5).map(
-      (p: any, idx) => `${idx + 2}. ${p.name} (${p.hio_count} hio)`
+      (p, idx) => `${idx + 2}. ${p.name} (${p.hio_count} hio)`
     );
 
+    /** Sama tiimiavain kuin MVP-laskennassa — estää tuplausta kun historiassa ei ole user_id:tä. */
+    const popularityManagerKeyFromHistoryRow = (row: any, bucket: string) => {
+      const uid = row.user_id as string | undefined;
+      if (uid && typeof uid === 'string') return `${bucket}::uid:${uid}`;
+      return `${bucket}::${LEGACY_HOF}${row.team_name || row.manager_name || 'Nimetön tiimi'}`;
+    };
+    const popularityManagerKeyFromPick = (pick: any) => {
+      if (pick.user_id != null && pick.user_id !== '') {
+        return `${hofCurrentBucket}::uid:${pick.user_id}`;
+      }
+      return `${hofCurrentBucket}::pick:${pick.id ?? pick.player_id ?? 'x'}`;
+    };
+    /** Jos live-valintoja on, nykyisen segmentin historia jätetään pois — muuten sama kisa laskettaisiin kahdesti (results + picks). */
+    const skipHistoryRowsInCurrentBucket = picksForActiveTournament.length > 0;
+
     const popularity = new Map<string, Set<string>>();
-    history.forEach((row: any) => {
+    historyForDisplay.forEach((row: any) => {
       const playerName = row.player_name;
       if (!playerName) return;
-      const managerKey = `${row.tournament_name || 'na'}::${row.team_name || row.manager_name || 'na'}`;
+      const b = historySeasonBucket(row);
+      if (skipHistoryRowsInCurrentBucket && b === hofCurrentBucket) return;
+      const managerKey = popularityManagerKeyFromHistoryRow(row, b);
       if (!popularity.has(playerName)) popularity.set(playerName, new Set<string>());
       popularity.get(playerName)?.add(managerKey);
     });
-    allTeamsPicks.forEach((pick: any) => {
+    // Nykykisa mukana laskennassa aina → lukituksella näkyvä tulos on ajantasainen (ei jää vain historiaan).
+    picksForActiveTournament.forEach((pick: any) => {
       const playerName = pick.players?.name;
       if (!playerName) return;
-      const managerKey = `${activeTournament?.name || 'aktiivinen'}::${currentTeamNameByUid(pick.user_id)}`;
+      const managerKey = popularityManagerKeyFromPick(pick);
       if (!popularity.has(playerName)) popularity.set(playerName, new Set<string>());
       popularity.get(playerName)?.add(managerKey);
     });
@@ -941,25 +1116,31 @@ export default function Home() {
         : [];
 
     const managerTournamentPoints = new Map<string, number>();
-    history.forEach((row: any) => {
-      const tName = row.tournament_name || 'Tuntematon turnaus';
+    historyForDisplay.forEach((row: any) => {
+      const b = historySeasonBucket(row);
       const manager = row.team_name || row.manager_name || 'Tiimi';
-      const key = `${tName}||${manager}`;
+      const key = `${b}||${manager}`;
       managerTournamentPoints.set(key, (managerTournamentPoints.get(key) || 0) + (Number(row.earned_points) || 0));
     });
     const currentTournamentByManager = new Map<string, number>();
-    allTeamsPicks.forEach((pick: any) => {
+    picksForActiveTournament.forEach((pick: any) => {
       const manager = currentTeamNameByUid(pick.user_id);
       currentTournamentByManager.set(manager, (currentTournamentByManager.get(manager) || 0) + getPickPoints(pick));
     });
     currentTournamentByManager.forEach((pts, manager) => {
-      const key = `${activeTournament?.name || 'Aktiivinen kisa'}||${manager}`;
+      const key = `${hofCurrentBucket}||${manager}`;
       managerTournamentPoints.set(key, (managerTournamentPoints.get(key) || 0) + pts);
     });
     const athSorted = Array.from(managerTournamentPoints.entries())
       .map(([key, pts]) => {
-        const [tournamentName, managerName] = key.split('||');
-        return { tournamentName, managerName, pts };
+        const sep = key.indexOf('||');
+        const bucket = sep >= 0 ? key.slice(0, sep) : key;
+        const managerName = sep >= 0 ? key.slice(sep + 2) : '';
+        return {
+          tournamentName: hofBucketLabels.get(bucket) || bucket,
+          managerName,
+          pts,
+        };
       })
       .sort((a, b) => b.pts - a.pts);
     const allTimeHigh = athSorted[0];
@@ -968,16 +1149,16 @@ export default function Home() {
     );
 
     const tournamentPar = new Map<string, { sum: number; count: number }>();
-    history.forEach((row: any) => {
-      const tName = row.tournament_name || 'Tuntematon turnaus';
+    historyForDisplay.forEach((row: any) => {
+      const b = historySeasonBucket(row);
       const p = Number(row.player_score);
       if (Number.isNaN(p)) return;
-      const prev = tournamentPar.get(tName) || { sum: 0, count: 0 };
-      tournamentPar.set(tName, { sum: prev.sum + p, count: prev.count + 1 });
+      const prev = tournamentPar.get(b) || { sum: 0, count: 0 };
+      tournamentPar.set(b, { sum: prev.sum + p, count: prev.count + 1 });
     });
     const hardestSorted = Array.from(tournamentPar.entries())
-      .map(([name, d]) => ({
-        name,
+      .map(([bucket, d]) => ({
+        name: hofBucketLabels.get(bucket) || bucket,
         avgPar: d.count ? d.sum / d.count : 0,
         count: d.count,
       }))
@@ -989,18 +1170,23 @@ export default function Home() {
     );
 
     const tournamentPoints = new Map<string, number>();
-    history.forEach((row: any) => {
-      const tName = row.tournament_name || 'Tuntematon turnaus';
-      tournamentPoints.set(tName, (tournamentPoints.get(tName) || 0) + (Number(row.earned_points) || 0));
+    historyForDisplay.forEach((row: any) => {
+      const b = historySeasonBucket(row);
+      tournamentPoints.set(b, (tournamentPoints.get(b) || 0) + (Number(row.earned_points) || 0));
     });
-    const currentTotalPoints = allTeamsPicks.reduce((acc: number, pick: any) => acc + getPickPoints(pick), 0);
+    const currentTotalPoints = picksForActiveTournament.reduce((acc: number, pick: any) => acc + getPickPoints(pick), 0);
     if (currentTotalPoints > 0) {
-      tournamentPoints.set(activeTournament?.name || 'Aktiivinen kisa', (tournamentPoints.get(activeTournament?.name || 'Aktiivinen kisa') || 0) + currentTotalPoints);
+      tournamentPoints.set(
+        hofCurrentBucket,
+        (tournamentPoints.get(hofCurrentBucket) || 0) + currentTotalPoints
+      );
     }
-    const floodSorted = Array.from(tournamentPoints.entries()).sort((a, b) => b[1] - a[1]);
+    const floodSorted = Array.from(tournamentPoints.entries())
+      .map(([bucket, pts]) => ({ name: hofBucketLabels.get(bucket) || bucket, pts }))
+      .sort((a, b) => b.pts - a.pts);
     const flood = floodSorted[0];
     const floodExpandLines = floodSorted.slice(1, 5).map(
-      ([name, pts], idx) => `${idx + 2}. ${name} (${pts} p)`
+      (row, idx) => `${idx + 2}. ${row.name} (${row.pts} p)`
     );
 
     return [
@@ -1020,28 +1206,32 @@ export default function Home() {
             ? `${steal.name} (${formatMoneyFi(Math.round(steal.price / steal.points))}\u00A0€ / piste)`
             : fallback,
         detail:
-          'Pienin maksettu summa per ansaitsema fantasypiste (€/piste), koko kauden hankinnat ja pisteet. Matalampi luku on parempi — listassa 2–5 on kalliimpia per piste kuin ykkönen.',
+          'Lasketaan vain arkistoiduista kisoista (€ maksettu / ansaittu piste). Päivittyy, kun aloitat uuden kisan ja edellinen arkistoidaan. Matalampi €/piste on parempi; listassa 2–5 ovat kalliimpia per piste kuin ykkönen.',
         expandLines: stealExpandLines,
       },
       {
         emoji: '🔥',
         title: 'Hot round -sankari',
         value: hotHero && (Number(hotHero.hot_rounds) || 0) > 0 ? `${hotHero.name} (${hotHero.hot_rounds} hot roundia)` : fallback,
-        detail: 'Eniten Hot Round -bonuksia',
+        detail:
+          'Koko kauden summa: arkistoidut kisat (kun rivillä on hot_rounds) + tämän kisan pelaajatiedot.',
         expandLines: hotExpandLines,
       },
       {
         emoji: '⛳',
         title: 'Holari-kuningas',
         value: hioKing && (Number(hioKing.hio_count) || 0) > 0 ? `${hioKing.name} (${hioKing.hio_count} hio)` : fallback,
-        detail: 'Eniten HIO-merkintöjä',
+        detail:
+          'Koko kauden summa: arkistoidut kisat (kun rivillä on hio_count) + tämän kisan pelaajatiedot.',
         expandLines: hioExpandLines,
       },
       {
         emoji: '⭐',
         title: 'Suosituin valinta',
         value: revealMostPopular && mostPopular ? `${mostPopular.name} (${mostPopular.count} managerin joukkueessa)` : fallback,
-        detail: revealMostPopular ? 'Useimmin managerien valitsema pelaaja' : 'Piilotettu kunnes kisa on lukittu',
+        detail: revealMostPopular
+          ? 'Eri managerien määrä koko kaudella (arkisto + nykyinen kisa). Laskenta päivittyy jatkuvasti; näkyy vain lukittuna.'
+          : 'Laskenta sisältää jo nykykisan valinnat. Voittaja ja lista näkyvät, kun kisa lukitaan.',
         expandLines: popExpandLines,
       },
       {
@@ -1062,11 +1252,35 @@ export default function Home() {
       {
         emoji: '🌊',
         title: 'Pistetulva',
-        value: flood ? `${flood[0]} (${flood[1]} p)` : fallback,
+        value: flood ? `${flood.name} (${flood.pts} p)` : fallback,
         detail: 'Turnaus, jossa jaettiin eniten pisteitä',
         expandLines: floodExpandLines,
       },
     ];
+  })();
+
+  const historyArchiveGroups = (() => {
+    const map = new Map<string, any[]>();
+    for (const h of historyForDisplay) {
+      const key = historySeasonBucket(h);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(h);
+    }
+    return [...map.entries()]
+      .map(([key, rows]) => ({
+        key,
+        rows,
+        title: rows[0]?.tournament_name || 'Tuntematon',
+        segment:
+          rows[0]?.season_segment != null && Number.isFinite(Number(rows[0].season_segment))
+            ? Number(rows[0].season_segment)
+            : null,
+      }))
+      .sort((a, b) => {
+        const maxA = Math.max(0, ...a.rows.map((r: any) => new Date(r.created_at || 0).getTime()));
+        const maxB = Math.max(0, ...b.rows.map((r: any) => new Date(r.created_at || 0).getTime()));
+        return maxB - maxA;
+      });
   })();
 
   return (
@@ -1171,12 +1385,16 @@ export default function Home() {
           updateTournamentName={updateTournamentName}
           updateTournamentRoundParStrokes={updateTournamentRoundParStrokes}
           players={players.filter(p => p.is_active)}
+          allPlayersForArchive={players}
+          history={history}
+          refreshData={loadData}
           adminSearch={adminSearch}
           setAdminSearch={setAdminSearch}
           handleRatingImport={handleRatingImport}
           importResultsFromCsvFile={importResultsFromCsvFile}
           startNewTournament={startNewTournament}
           toggleTournamentLock={toggleTournamentLock}
+          picksRowCountForActiveTournament={picksForActiveTournament.length}
           saveAdminStats={saveAdminStats}
         />
       )}
@@ -1186,11 +1404,13 @@ export default function Home() {
           players={players.filter(p => p.is_active)}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
-          team={team}
+          team={draftTeam}
+          savedTeam={team}
           budget={BUDGET}
           isLocked={activeTournament?.is_locked}
-          onSelect={selectPlayer}
-          onRemove={removePlayer}
+          onSelect={selectDraftPlayer}
+          onRemove={removeDraftPlayer}
+          onSave={saveDraftTeam}
           getPrice={getPrice}
           teamLogoPath={teamLogoPath}
           teamLogoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
@@ -1322,7 +1542,7 @@ export default function Home() {
             profiles={profiles}
             isLocked={!!activeTournament?.is_locked}
             viewerUserId={user.id}
-            allTeamsPicks={allTeamsPicks}
+            allTeamsPicks={picksForActiveTournament}
             players={players}
             getPrice={getPrice}
             getPickPoints={getPickPoints}
@@ -1364,20 +1584,30 @@ export default function Home() {
                     <span className="pm-avatar" aria-hidden>
                       🎯
                     </span>
-                    <h3 className="pm-name">Kierrostuloksen pisteytys (heittäjälle)</h3>
+                    <h3 className="pm-name">Tulos vs par — fantasy-pisteet</h3>
                   </div>
                   <ul className="pm-rules-list pm-rules-list--scoring">
-                    <li className="pm-rules-scoring-core">
-                      <span className="font-extrabold text-white/90">Kierrostulos -1:</span> heittäjälle +2 pistettä
+                    <li className="text-[13px] leading-relaxed text-white/80">
+                      Pisteet lasketaan sen hetkisen kokonaistuloksen mukaan. Mitä parempi tulos, sitä enemmän pisteitä:
                     </li>
                     <li className="pm-rules-scoring-core">
-                      <span className="font-extrabold text-white/90">Kierrostulos +1:</span> heittäjälle -1 piste
+                      <span className="font-extrabold text-white/90">Tulokset alle parin (miinukset):</span> Saat +2 pistettä jokaisesta
+                      miinusheitosta.
                     </li>
                     <li className="pm-rules-scoring-example">
-                      <span className="font-extrabold text-white/90">Esimerkki:</span> kierrostulos -4 = heittäjälle +8 pistettä
+                      <span className="font-extrabold text-white/90">Esimerkki:</span> Tulos -4 → 8 pistettä.
+                    </li>
+                    <li className="pm-rules-scoring-core">
+                      <span className="font-extrabold text-white/90">Tulokset yli parin (plussat):</span> Saat -1 pisteen jokaisesta plusheitosta.
                     </li>
                     <li className="pm-rules-scoring-example">
-                      <span className="font-extrabold text-white/90">Esimerkki:</span> kierrostulos +2 = heittäjälle -2 pistettä
+                      <span className="font-extrabold text-white/90">Esimerkki:</span> Tulos +2 → -2 pistettä.
+                    </li>
+                    <li className="pm-rules-scoring-core">
+                      <span className="font-extrabold text-white/90">Tulos tasan parissa:</span> Saat 0 pistettä.
+                    </li>
+                    <li className="text-[13px] leading-relaxed text-white/80">
+                      Kisan päättyessä viimeisen kierroksen kertymä on lopullinen pistemääräsi (ilman sijoitusbonusta).
                     </li>
                   </ul>
                 </article>
@@ -1387,18 +1617,18 @@ export default function Home() {
                     <span className="pm-avatar" aria-hidden>
                       ⛳
                     </span>
-                    <h3 className="pm-name">Kierros- ja suorituspisteet</h3>
+                    <h3 className="pm-name">Lisäpisteet kierroksista ja erikoistilanteista</h3>
                   </div>
                   <ul className="pm-rules-list">
                     <li>
-                      <span className="font-extrabold text-white/90">Pelikierrokset:</span> Jokainen pelattu kierros tuo 2 pistettä. (Esim.
-                      cutista selviäminen kerryttää pistepottia).
+                      <span className="font-extrabold text-white/90">Pelatut kierrokset:</span> jokainen pelattu kierros +2 pistettä (cutin
+                      jälkeen jokainen lisäkierros kerryttää samaan tapaan).
                     </li>
                     <li>
-                      <span className="font-extrabold text-white/90">Hot Round:</span> Kierroksen parhaasta tuloksesta palkitaan 5 pisteellä.
+                      <span className="font-extrabold text-white/90">Hot round:</span> kierroksen parhaasta tuloksesta +5 pistettä.
                     </li>
                     <li>
-                      <span className="font-extrabold text-white/90">Hole-in-One:</span> Holarista pelaaja kuittaa 30 pistettä.
+                      <span className="font-extrabold text-white/90">Hole-in-one:</span> holarista +20 pistettä.
                     </li>
                   </ul>
                 </article>
@@ -1432,21 +1662,20 @@ export default function Home() {
           </div>
 
           <div className="pm-grid">
-            {history.length === 0 && (
+            {historyForDisplay.length === 0 && (
               <div className="col-span-full rounded-[10px] border border-dashed border-white/15 bg-white/[0.03] p-5 text-center text-sm text-white/55 backdrop-blur">
                 Historiikissa ei ole vielä turnauksia. Kun aloitat uuden kisan administa, nykyinen kisa arkistoidaan tänne.
               </div>
             )}
 
-            {history.length > 0 &&
-              Array.from(new Set(history.map(h => h.tournament_name)))
-                .reverse()
-                .map(tName => {
-                  const tournamentRows = history.filter(h => h.tournament_name === tName);
+            {historyForDisplay.length > 0 &&
+              historyArchiveGroups.map(({ key, rows, title, segment }) => {
+                  const tournamentRows = rows;
+                  const heading = segment != null ? `${title} (osa ${segment})` : title;
                   const teamTotals = Array.from(new Set(tournamentRows.map(h => h.team_name)))
                     .map(t => {
-                      const rows = tournamentRows.filter(r => r.team_name === t);
-                      const score = rows.reduce((acc, curr) => {
+                      const rowsForTeam = tournamentRows.filter(r => r.team_name === t);
+                      const score = rowsForTeam.reduce((acc, curr) => {
                         const par = Number(curr.player_score) || 0;
                         const pts = (par < 0 ? Math.abs(par) * 2 : par * -1) + (Number(curr.player_rounds) * 2);
                         return acc + (curr.earned_points ?? pts);
@@ -1459,7 +1688,7 @@ export default function Home() {
 
                   return (
                     <details
-                      key={tName}
+                      key={key}
                       className="group col-span-full overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] shadow-[0_2px_12px_rgba(0,0,0,0.3)] backdrop-blur"
                     >
                       <summary className="cursor-pointer select-none list-none px-3 py-3 [&::-webkit-details-marker]:hidden sm:px-4 sm:py-3.5">
@@ -1471,8 +1700,8 @@ export default function Home() {
                             🏆
                           </span>
                           <div className="min-w-0 flex-1">
-                            <h3 className="pm-name" title={tName}>
-                              {tName}
+                            <h3 className="pm-name" title={heading}>
+                              {heading}
                             </h3>
                             <p className="pm-sub !mt-0.5">{teamTotals.length} tiimiä</p>
                           </div>

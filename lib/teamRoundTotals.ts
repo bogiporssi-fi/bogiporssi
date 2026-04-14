@@ -1,8 +1,8 @@
 import { breakdownFromPlayerRow } from "./pointsBreakdown";
 
 /**
- * Joukkueen fantasy-pisteet kierroksittain: summa pelaajien kierroskohtaisista subtotaleista
- * (round_breakdown / roundsDetail). Ei sisällä sijoitusbonusta (turnaustason kenttä).
+ * Joukkueen fantasy-pisteet kierroksittain: summa pelaajien kierroskohtaisista marginaaleista
+ * (roundMarginalPts). Ei sisällä sijoitusbonusta (turnaustason kenttä).
  */
 export function teamRoundTotalsFromPicks(picks: any[], players?: any[]): { n: number; total: number }[] {
   const map = new Map<number, number>();
@@ -13,7 +13,7 @@ export function teamRoundTotalsFromPicks(picks: any[], players?: any[]): { n: nu
     const b = breakdownFromPlayerRow(pl);
     if (!b.roundsDetail?.length) continue;
     for (const rd of b.roundsDetail) {
-      map.set(rd.n, (map.get(rd.n) ?? 0) + rd.subtotal);
+      map.set(rd.n, (map.get(rd.n) ?? 0) + rd.roundMarginalPts);
     }
   }
   return [...map.entries()]

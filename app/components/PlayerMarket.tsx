@@ -8,10 +8,12 @@ interface PlayerMarketProps {
   searchTerm: string;
   setSearchTerm: (val: string) => void;
   team: any[];
+  savedTeam: any[];
   budget: number;
   isLocked: boolean;
   onSelect: (id: string, rating: number) => void;
   onRemove: (playerId: string) => void;
+  onSave: () => void;
   getPrice: (rating: number) => number;
   teamLogoPath?: string | null;
   teamLogoId?: string | null;
@@ -35,15 +37,18 @@ export default function PlayerMarket({
   searchTerm,
   setSearchTerm,
   team,
+  savedTeam,
   budget,
   isLocked,
   onSelect,
   onRemove,
+  onSave,
   getPrice,
   teamLogoPath,
   teamLogoId,
   teamDisplayName,
 }: PlayerMarketProps) {
+  const minPrice = getPrice(950);
   const showTeamLogo = Boolean(teamLogoPath || parseTeamLogoId(teamLogoId));
   const filteredPlayers = players.filter((p) =>
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -54,14 +59,20 @@ export default function PlayerMarket({
     return team.reduce((acc: number, curr: any) => {
       const pl = players.find((p) => p.id === curr.player_id);
       const bp = curr.buy_price;
-      if (bp != null && bp !== "") return acc + Number(bp);
+      if (bp != null && bp !== "") return acc + Math.max(minPrice, Number(bp) || 0);
       return acc + getPrice(Number(pl?.official_rating) || 950);
     }, 0);
-  }, [team, players, getPrice]);
+  }, [team, players, getPrice, minPrice]);
   const displayBudget = Number.isFinite(budget) && budget > 0 ? budget : 1_000_000;
   const over = spent > displayBudget;
   const fillPct = over ? 100 : Math.min(100, Math.max(0, (spent / displayBudget) * 100));
   const remaining = Math.max(0, displayBudget - spent);
+  const isReadyToSave = team.length === 5 && !isLocked;
+  const savedPlayerIds = new Set(savedTeam.map((p) => p.player_id));
+  const draftPlayerIds = new Set(team.map((p) => p.player_id));
+  const hasUnsavedChanges =
+    team.length !== savedTeam.length ||
+    [...draftPlayerIds].some((id) => !savedPlayerIds.has(id));
 
   const barFillStyle: React.CSSProperties = over
     ? { background: "linear-gradient(90deg, #f87171 0%, #ef4444 100%)" }
@@ -98,6 +109,75 @@ export default function PlayerMarket({
             className="bp-input"
           />
         </div>
+      </div>
+
+      <div className="pm-card pm-card--stack pm-market-draft-card">
+        <div className="pm-market-draft-head">
+          <div className="min-w-0 flex-1">
+            <h3 className="pm-name">Joukkue luonnos ({team.length}/5)</h3>
+            <p className="pm-sub">
+              {isLocked
+                ? "Turnaus on lukittu: luonnosta ei voi muokata tai tallentaa."
+                : isReadyToSave
+                  ? "Valmis tallennettavaksi."
+                  : "Valitse 5/5 pelaajaa tallentaaksesi."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!isReadyToSave}
+            className={["bp-btn-primary", !isReadyToSave ? "cursor-not-allowed opacity-40" : ""].join(" ")}
+            title={!isReadyToSave ? "Tallennus vaatii täsmälleen 5 pelaajaa" : undefined}
+          >
+            Tallenna
+          </button>
+        </div>
+        <div className="pm-market-draft-list" aria-label="Luonnoksessa valitut pelaajat">
+          {team.length === 0 ? (
+            <div className="pm-market-draft-empty">Ei vielä valintoja.</div>
+          ) : (
+            team.map((pick: any) => {
+              const name = pick.players?.name || "Tuntematon";
+              const price = Number(pick.buy_price) || 0;
+              const rawRating =
+                pick.players?.official_rating ?? pick.official_rating ?? null;
+              const rating =
+                rawRating !== null && rawRating !== undefined && rawRating !== ""
+                  ? Number(rawRating)
+                  : null;
+              return (
+                <div key={pick.player_id} className="pm-market-draft-chip">
+                  <div className="pm-market-draft-chip-main">
+                    <span className="pm-avatar pm-avatar--sm" aria-hidden>
+                      {initials(name)}
+                    </span>
+                    <span className="pm-market-draft-chip-name" title={name}>
+                      {name}
+                    </span>
+                  </div>
+                  <div className="pm-market-draft-chip-meta">
+                    <span className="pm-market-draft-meta-pill">
+                      <span className="pm-market-draft-meta-label">Rating</span>
+                      <span className="pm-market-draft-meta-value">
+                        {rating != null && Number.isFinite(rating) ? rating : "—"}
+                      </span>
+                    </span>
+                    <span className="pm-market-draft-meta-pill pm-market-draft-meta-pill--price">
+                      <span className="pm-market-draft-meta-label">Hinta</span>
+                      <span className="pm-market-draft-meta-value">
+                        {formatMoneyFi(price)}€
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <p className="pm-market-draft-note">
+          {hasUnsavedChanges ? "Sinulla on tallentamattomia muutoksia." : "Luonnos vastaa tallennettua joukkuetta."}
+        </p>
       </div>
 
       <div

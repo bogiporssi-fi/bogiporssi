@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import type { PointsBreakdown } from "../../lib/pointsBreakdown";
+import { parPtsFromPar, type PointsBreakdown } from "../../lib/pointsBreakdown";
 
 type Props = {
   breakdown: PointsBreakdown;
@@ -32,7 +32,7 @@ export default function PlayerPointsBreakdownPanel({
             <span key={rd.n}>
               {i > 0 ? <span className="pm-player-breakdown-chips-sep">·</span> : null}
               <span className="pm-player-breakdown-chips-k">K{rd.n}</span>
-              <span className="pm-player-breakdown-chips-v">{rd.subtotal} p</span>
+              <span className="pm-player-breakdown-chips-v">{rd.runningTotalPts} p</span>
             </span>
           ))}
         </div>
@@ -47,28 +47,38 @@ export default function PlayerPointsBreakdownPanel({
                 <thead>
                   <tr>
                     <th scope="col">K</th>
-                    <th scope="col">Par</th>
+                    <th scope="col">Kokonaistulos</th>
+                    <th scope="col">Pisteet</th>
                     <th scope="col">Krs</th>
                     <th scope="col">Hot</th>
                     <th scope="col">HIO</th>
-                    <th scope="col">Yht.</th>
+                    <th scope="col" title="Kumulatiivinen; ei sisällä sijoitusbonusta">
+                      Yhteensä
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {roundsDetail.map((rd) => (
                     <tr key={rd.n}>
                       <td className="pm-breakdown-col-k">K{rd.n}</td>
-                      <td>
-                        <span className="pm-breakdown-par-note">({rd.par}) </span>
-                        <span className="pm-breakdown-val">{fmtPts(rd.parPts)}</span>
-                      </td>
+                      <td className="pm-breakdown-val tabular-nums">{fmtPts(rd.runningVsPar)}</td>
+                      <td className="pm-breakdown-val">{fmtPts(parPtsFromPar(rd.runningVsPar))}</td>
                       <td className="pm-breakdown-val">{fmtPts(rd.roundsPts)}</td>
                       <td className="pm-breakdown-val">{fmtPts(rd.hotPts)}</td>
                       <td className="pm-breakdown-val">{fmtPts(rd.hioPts)}</td>
-                      <td className="pm-breakdown-val pm-breakdown-val-total">{fmtPts(rd.subtotal)}</td>
+                      <td className="pm-breakdown-val pm-breakdown-val-total">{fmtPts(rd.runningTotalPts)}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="pm-breakdown-tfoot-tr">
+                    <td colSpan={5} className="pm-breakdown-tfoot-label">
+                      Sijoitusbonus
+                    </td>
+                    <td className="pm-breakdown-val">{fmtPts(b.positionPts)}</td>
+                    <td className="pm-breakdown-val pm-breakdown-val-total">{fmtPts(b.computedTotal)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -90,13 +100,15 @@ export default function PlayerPointsBreakdownPanel({
             <span className="font-extrabold tabular-nums text-sky-200/90">{b.hotPts} p</span>
           </li>
           <li>
-            Hole-in-one ({b.hioCount} × 30):{" "}
+            Hole-in-one ({b.hioCount} × 20):{" "}
             <span className="font-extrabold tabular-nums text-sky-200/90">{b.hioPts} p</span>
           </li>
-          <li>
-            Sijoitusbonus:{" "}
-            <span className="font-extrabold tabular-nums text-sky-200/90">{b.positionPts} p</span>
-          </li>
+          {!hasRounds && (
+            <li>
+              Sijoitusbonus:{" "}
+              <span className="font-extrabold tabular-nums text-sky-200/90">{b.positionPts} p</span>
+            </li>
+          )}
           <li className="pm-player-breakdown-total">
             Laskettu yhteensä:{" "}
             <span className="font-extrabold tabular-nums text-amber-200/95">{b.computedTotal} p</span>

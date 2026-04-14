@@ -5,14 +5,20 @@ import { normalizeRoundBreakdown, type RoundBreakdownStored } from "./roundBreak
 
 export type RoundDetailLine = {
   n: number;
+  /** Kierroksen par-ero (yksi kierros) */
   par: number;
+  /** Kumulatiivinen par-ero tämän kierroksen jälkeen (kierrosten summa) */
+  runningVsPar: number;
   parPts: number;
   roundsPts: number;
   hot: number;
   hotPts: number;
   hio: number;
   hioPts: number;
-  subtotal: number;
+  /** Fantasy-pisteet tältä kierrokselta (marginaali; joukkueen kierrossummat) */
+  roundMarginalPts: number;
+  /** Fantasy-pisteet yhteensä tämän kierroksen jälkeen (ei sijoitusbonusta) */
+  runningTotalPts: number;
 };
 
 export type PointsBreakdown = {
@@ -37,31 +43,39 @@ export function parPtsFromPar(par: number): number {
   return par < 0 ? Math.abs(par) * 2 : par * -1;
 }
 
+/**
+ * Kierrosrivien par-pisteet = sama piecewise-sääntö kuin koko kisassa,
+ * mutta näytetään marginaalina: f(kum_jälkeen) − f(kum_ennen), f = parPtsFromPar.
+ * Summautuu aina f(lopullinen kumulatiivinen par) = par_score -riviin.
+ */
 export function buildRoundDetailLines(stored: RoundBreakdownStored): RoundDetailLine[] {
   let cumulativePar = 0;
-  return stored.map((r) => {
-    let parPts = parPtsFromPar(r.par);
-    // Kierroskohtainen erityissääntö:
-    // jos pelaaja on ennen kierrosta miinuksen puolella ja kierros on plussaa,
-    // plussa rankaistaan tuplana (esim. +2 => -4).
-    if (r.par > 0 && cumulativePar < 0) {
-      parPts = r.par * -2;
-    }
+  let cumHot = 0;
+  let cumHio = 0;
+  return stored.map((r, i) => {
+    const beforeCum = cumulativePar;
+    cumulativePar += r.par;
+    const parPts = parPtsFromPar(cumulativePar) - parPtsFromPar(beforeCum);
     const roundsPts = 2;
     const hotPts = r.hot * 5;
-    const hioPts = r.hio * 30;
-    const subtotal = parPts + roundsPts + hotPts + hioPts;
-    cumulativePar += r.par;
+    const hioPts = r.hio * 20;
+    cumHot += r.hot;
+    cumHio += r.hio;
+    const roundMarginalPts = parPts + roundsPts + hotPts + hioPts;
+    const runningTotalPts =
+      parPtsFromPar(cumulativePar) + 2 * (i + 1) + 5 * cumHot + 20 * cumHio;
     return {
       n: r.n,
       par: r.par,
+      runningVsPar: cumulativePar,
       parPts,
       roundsPts,
       hot: r.hot,
       hotPts,
       hio: r.hio,
       hioPts,
-      subtotal,
+      roundMarginalPts,
+      runningTotalPts,
     };
   });
 }
@@ -76,7 +90,7 @@ export function breakdownFromPlayerRow(p: any): PointsBreakdown {
   const parPts = parPtsFromPar(par);
   const roundsPts = roundsPlayed * 2;
   const hotPts = hotRounds * 5;
-  const hioPts = hioCount * 30;
+  const hioPts = hioCount * 20;
 
   const computedTotal = parPts + roundsPts + hotPts + hioPts + positionPts;
 

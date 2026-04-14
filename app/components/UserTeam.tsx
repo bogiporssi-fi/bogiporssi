@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { getPickPointsFromPick } from "../../lib/pickPoints";
 import { breakdownFromPlayerRow } from "../../lib/pointsBreakdown";
 import PlayerPointsBreakdownPanel from "./PlayerPointsBreakdownPanel";
 import TeamLogo from "./TeamLogo";
@@ -35,6 +36,7 @@ export default function UserTeam({
   teamLogoPath,
   teamLogoId,
 }: UserTeamProps) {
+  const minPrice = getPrice(950);
   return (
     <section className="pm-section">
       <div className="pm-toolbar">
@@ -66,13 +68,10 @@ export default function UserTeam({
             rawRating !== null && rawRating !== undefined && rawRating !== ""
               ? Number(rawRating)
               : NaN;
-          const pts =
-            pick.earned_points !== null && pick.earned_points !== undefined
-              ? pick.earned_points
-              : pick.players?.points ?? 0;
+          const pts = getPickPointsFromPick(pick);
           const buy =
             pick.buy_price !== null && pick.buy_price !== undefined
-              ? Number(pick.buy_price)
+              ? Math.max(minPrice, Number(pick.buy_price) || 0)
               : getPrice(Number.isFinite(rating) ? rating : 950);
 
           const pl = pick.players;

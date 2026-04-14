@@ -87,6 +87,7 @@ function TournamentPickRows({
   getPrice: (rating: number) => number;
   getPickPoints: (pick: any) => number;
 }) {
+  const minPrice = getPrice(950);
   return (
     <div className="pm-roster-expanded mt-1.5 pt-1">
       <TeamRoundTotalsStrip picks={picks} players={players} variant="roster" className="mb-3" />
@@ -97,7 +98,7 @@ function TournamentPickRows({
         const rating = r !== null && r !== undefined && r !== "" ? Number(r) : NaN;
         const price =
           pick.buy_price !== null && pick.buy_price !== undefined
-            ? Number(pick.buy_price)
+            ? Math.max(minPrice, Number(pick.buy_price) || 0)
             : getPrice(Number.isFinite(rating) ? rating : 950);
         const breakdown = pl ? breakdownFromPlayerRow(pl) : null;
         const storedPts = pl != null ? Number(pl.points) || 0 : null;
@@ -290,7 +291,7 @@ export default function Leaderboards({
 }: LeaderboardsProps) {
   const subTeams =
     tab === "tournament"
-      ? "Vain tämän turnauksen pisteet — joukkueet joilla on valintoja."
+      ? "Fantasy-joukkueet: managerit joilla on tallennettuja valintoja tähän kisaan (picks). Ei sama kuin Pelaajat-välilehti."
       : "Koko kauden pisteet: arkistoidut kisat + tämänhetkisen kisan pisteet yhteen.";
 
   const subPlayers =

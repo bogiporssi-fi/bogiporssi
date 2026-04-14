@@ -1,4 +1,5 @@
 import { breakdownFromPlayerRow, type PointsBreakdown } from './pointsBreakdown';
+import { currentSeasonBucket, historySeasonBucket, parseSegmentNumberFromBucket } from './seasonSegment';
 
 export type { PointsBreakdown };
 
@@ -69,35 +70,51 @@ export function buildPlayerTournamentRows(players: any[]): PlayerStatRow[] {
   return toRows(byName, players);
 }
 
+export type BuildPlayerSeasonOpts = {
+  name: string;
+  seasonSegment: number;
+};
+
 /**
- * Kausi: arkisto (max per turnaus per pelaaja) + nykyinen kisa: jokaisen aktiivisen pelaajan players.points.
+ * Kausi: arkisto (max per osio per pelaaja) + nykyinen osio: aktiivisten pelaajien players.points.
+ * Sisäinen avain = seasonSegment-bucket (ei pelkkä näyttönimi).
  */
 export function buildPlayerSeasonRows(
   history: any[],
   players: any[],
-  activeTournamentName: string
+  opts: BuildPlayerSeasonOpts
 ): PlayerStatRow[] {
   const perTournament = new Map<string, Map<string, number>>();
+  const bucketLabels = new Map<string, string>();
 
-  const addMax = (tournament: string, playerName: string, pts: number) => {
+  /** Paras tulos / bucket / pelaaja (useita rivejä). Ei saa käyttää || 0: miinukset katoaisivat Math.max(0, -5). */
+  const addMax = (bucket: string, playerName: string, pts: number) => {
     if (!playerName?.trim()) return;
-    if (!perTournament.has(tournament)) perTournament.set(tournament, new Map());
-    const m = perTournament.get(tournament)!;
-    m.set(playerName, Math.max(m.get(playerName) || 0, pts));
+    if (!perTournament.has(bucket)) perTournament.set(bucket, new Map());
+    const m = perTournament.get(bucket)!;
+    const prev = m.get(playerName);
+    m.set(playerName, prev === undefined ? pts : Math.max(prev, pts));
   };
 
   history.forEach((row: any) => {
-    const t = row.tournament_name || 'Tuntematon turnaus';
+    const b = historySeasonBucket(row);
+    if (!bucketLabels.has(b)) {
+      bucketLabels.set(b, row.tournament_name || 'Tuntematon turnaus');
+    }
     const name = row.player_name;
     if (!name) return;
-    addMax(t, name, earnedPointsFromHistoryRow(row));
+    addMax(b, name, earnedPointsFromHistoryRow(row));
   });
+
+  const activeTournamentLike = { season_segment: opts.seasonSegment };
+  const currentB = currentSeasonBucket(activeTournamentLike);
+  bucketLabels.set(currentB, opts.name);
 
   players.forEach((p: any) => {
     if (!p?.is_active) return;
     const name = String(p.name || '').trim();
     if (!name) return;
-    addMax(activeTournamentName, name, Number(p.points) || 0);
+    addMax(currentB, name, Number(p.points) || 0);
   });
 
   const seasonTotals = new Map<string, number>();
@@ -115,18 +132,33 @@ export function buildPlayerSeasonRows(
     if (!seasonTotals.has(name)) seasonTotals.set(name, 0);
   });
 
-  const seasonByPlayer = new Map<string, Array<{ tournamentName: string; points: number }>>();
-  perTournament.forEach((playerMap, tournamentName) => {
+  type Line = { bucket: string; tournamentName: string; points: number };
+  const seasonByPlayer = new Map<string, Line[]>();
+  perTournament.forEach((playerMap, bucket) => {
+    const label = bucketLabels.get(bucket) || bucket;
     playerMap.forEach((pts, playerName) => {
       if (!seasonByPlayer.has(playerName)) seasonByPlayer.set(playerName, []);
-      seasonByPlayer.get(playerName)!.push({ tournamentName, points: pts });
+      seasonByPlayer.get(playerName)!.push({ bucket, tournamentName: label, points: pts });
     });
   });
-  seasonByPlayer.forEach((arr) => arr.sort((a, b) => a.tournamentName.localeCompare(b.tournamentName, 'fi')));
+  const sortBuckets = (a: string, b: string) => {
+    const na = parseSegmentNumberFromBucket(a);
+    const nb = parseSegmentNumberFromBucket(b);
+    if (na != null && nb != null) return nb - na;
+    if (na != null) return -1;
+    if (nb != null) return 1;
+    return a.localeCompare(b, 'fi');
+  };
+  seasonByPlayer.forEach((arr) => {
+    arr.sort((x, y) => sortBuckets(x.bucket, y.bucket));
+  });
 
   return toRows(seasonTotals, players).map((row) => ({
     ...row,
     breakdown: null,
-    seasonByTournament: seasonByPlayer.get(row.name) ?? [],
+    seasonByTournament: (seasonByPlayer.get(row.name) ?? []).map(({ tournamentName, points }) => ({
+      tournamentName,
+      points,
+    })),
   }));
 }

@@ -1,27 +1,296 @@
 "use client";
-import React, { useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ARCHIVE_HOT_HIO_AUX_TEAM_NAME } from '../../lib/archiveDisplay';
+import { supabase } from '../../lib/supabase';
 
 interface AdminPanelProps {
   activeTournament: any;
   players: any[];
+  /** Kaikki pelaajat (nimet) — arkiston Hot/HIO -lisärivit pelaajille joita kukaan ei valinnut. */
+  allPlayersForArchive: any[];
+  /** Hall of Fame -korjauksia varten: arkistoidut rivit (tournament_results). */
+  history: any[];
+  refreshData: () => void | Promise<void>;
   adminSearch: string;
   setAdminSearch: (val: string) => void;
   handleRatingImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
   importResultsFromCsvFile: (file: File) => void | Promise<void>;
   startNewTournament: () => void;
   toggleTournamentLock: () => void;
+  /** Aktiivisen turnauksen pick-rivejä (Tulokset / vianetsintä). */
+  picksRowCountForActiveTournament: number;
   updateTournamentName: (newName: string) => void;
   updateTournamentRoundParStrokes: (value: number | null) => void | Promise<void>;
   saveAdminStats: (pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) => void;
 }
 
+function archiveHotHioGroupKey(row: any): string {
+  const name = row.tournament_name || 'Tuntematon';
+  const seg =
+    row.season_segment != null && Number.isFinite(Number(row.season_segment))
+      ? Number(row.season_segment)
+      : 'legacy';
+  return JSON.stringify([name, seg]);
+}
+
+function archiveHotHioGroupLabel(key: string): string {
+  try {
+    const [name, seg] = JSON.parse(key) as [string, number | string];
+    return seg === 'legacy' ? String(name) : `${name} (osa ${seg})`;
+  } catch {
+    return key;
+  }
+}
+
+function parseArchiveHotHioKey(key: string): { tournament_name: string; season_segment: number | 'legacy' } | null {
+  try {
+    const [tournament_name, seg] = JSON.parse(key) as [string, number | string];
+    if (seg === 'legacy') return { tournament_name: String(tournament_name), season_segment: 'legacy' };
+    const n = Number(seg);
+    return { tournament_name: String(tournament_name), season_segment: Number.isFinite(n) ? n : 'legacy' };
+  } catch {
+    return null;
+  }
+}
+
+function normPlayerName(n: string) {
+  return String(n || '')
+    .trim()
+    .toLowerCase();
+}
+
 export default function AdminPanel({
-  activeTournament, players, adminSearch, setAdminSearch, 
-  handleRatingImport, importResultsFromCsvFile, startNewTournament, toggleTournamentLock, 
-  saveAdminStats, updateTournamentName, updateTournamentRoundParStrokes
+  activeTournament,
+  players,
+  allPlayersForArchive,
+  history,
+  refreshData,
+  adminSearch,
+  setAdminSearch,
+  handleRatingImport,
+  importResultsFromCsvFile,
+  startNewTournament,
+  toggleTournamentLock,
+  picksRowCountForActiveTournament,
+  saveAdminStats,
+  updateTournamentName,
+  updateTournamentRoundParStrokes,
 }: AdminPanelProps) {
   const resultsCsvRef = useRef<HTMLInputElement>(null);
-  
+  const tournamentId = activeTournament?.id;
+
+  const [roundParDraft, setRoundParDraft] = useState('');
+  const [roundParDirty, setRoundParDirty] = useState(false);
+  const [roundParSaving, setRoundParSaving] = useState(false);
+  const [roundParMessage, setRoundParMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRoundParDirty(false);
+  }, [tournamentId]);
+
+  useEffect(() => {
+    if (roundParDirty) return;
+    const v = activeTournament?.round_par_strokes;
+    setRoundParDraft(v != null && Number(v) > 0 ? String(Math.round(Number(v))) : '');
+  }, [tournamentId, activeTournament?.round_par_strokes, roundParDirty]);
+
+  useEffect(() => {
+    if (!roundParMessage) return;
+    const t = window.setTimeout(() => setRoundParMessage(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [roundParMessage]);
+
+  const archiveHotHioGroups = useMemo(() => {
+    const m = new Map<string, any[]>();
+    for (const row of history || []) {
+      if (!row?.id) continue;
+      const k = archiveHotHioGroupKey(row);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(row);
+    }
+    return [...m.entries()].sort((a, b) => {
+      const maxA = Math.max(0, ...a[1].map((r: any) => new Date(r.created_at || 0).getTime()));
+      const maxB = Math.max(0, ...b[1].map((r: any) => new Date(r.created_at || 0).getTime()));
+      return maxB - maxA;
+    });
+  }, [history]);
+
+  const [archiveHotHioKey, setArchiveHotHioKey] = useState<string>('');
+  const [archiveHotHioDrafts, setArchiveHotHioDrafts] = useState<Record<string, { hot: string; hio: string }>>({});
+  const [archiveHotHioSaving, setArchiveHotHioSaving] = useState(false);
+  const [archiveHotHioMsg, setArchiveHotHioMsg] = useState<string | null>(null);
+  const [archiveHotHioPending, setArchiveHotHioPending] = useState<
+    Array<{ id: string; player_name: string; hot: string; hio: string }>
+  >([]);
+  const [archiveHotHioAddName, setArchiveHotHioAddName] = useState('');
+
+  useEffect(() => {
+    setArchiveHotHioPending([]);
+    setArchiveHotHioAddName('');
+  }, [archiveHotHioKey]);
+
+  useEffect(() => {
+    if (!archiveHotHioKey) {
+      setArchiveHotHioDrafts({});
+      return;
+    }
+    const rows = archiveHotHioGroups.find(([k]) => k === archiveHotHioKey)?.[1] || [];
+    const next: Record<string, { hot: string; hio: string }> = {};
+    for (const r of rows) {
+      next[r.id] = {
+        hot: r.hot_rounds != null && r.hot_rounds !== '' ? String(r.hot_rounds) : '',
+        hio: r.hio_count != null && r.hio_count !== '' ? String(r.hio_count) : '',
+      };
+    }
+    setArchiveHotHioDrafts(next);
+  }, [archiveHotHioKey, archiveHotHioGroups]);
+
+  const archiveHotHioParsedKey = archiveHotHioKey ? parseArchiveHotHioKey(archiveHotHioKey) : null;
+  const archiveHotHioExistingNames = useMemo(() => {
+    if (!archiveHotHioKey) return new Set<string>();
+    const rows = archiveHotHioGroups.find(([k]) => k === archiveHotHioKey)?.[1] || [];
+    const s = new Set<string>();
+    for (const r of rows) {
+      const n = normPlayerName(r.player_name || '');
+      if (n) s.add(n);
+    }
+    for (const p of archiveHotHioPending) {
+      const n = normPlayerName(p.player_name);
+      if (n) s.add(n);
+    }
+    return s;
+  }, [archiveHotHioKey, archiveHotHioGroups, archiveHotHioPending]);
+
+  const archiveHotHioAddableNames = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const pl of allPlayersForArchive || []) {
+      const name = String(pl?.name || '').trim();
+      if (!name) continue;
+      const key = normPlayerName(name);
+      if (archiveHotHioExistingNames.has(key)) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    out.sort((a, b) => a.localeCompare(b, 'fi'));
+    return out;
+  }, [allPlayersForArchive, archiveHotHioExistingNames]);
+
+  async function saveArchiveHotHioDrafts() {
+    if (!archiveHotHioKey || !archiveHotHioParsedKey) return;
+    const rows = archiveHotHioGroups.find(([k]) => k === archiveHotHioKey)?.[1] || [];
+    const { tournament_name, season_segment } = archiveHotHioParsedKey;
+    setArchiveHotHioSaving(true);
+    setArchiveHotHioMsg(null);
+    try {
+      for (const r of rows) {
+        const d = archiveHotHioDrafts[r.id];
+        if (!d) continue;
+        const hotP = parseInt(d.hot.trim(), 10);
+        const hioP = parseInt(d.hio.trim(), 10);
+        const hotV = d.hot.trim() === '' || !Number.isFinite(hotP) ? 0 : Math.max(0, hotP);
+        const hioV = d.hio.trim() === '' || !Number.isFinite(hioP) ? 0 : Math.max(0, hioP);
+        const { error } = await supabase
+          .from('tournament_results')
+          .update({ hot_rounds: hotV, hio_count: hioV })
+          .eq('id', r.id);
+        if (error) {
+          alert('Arkiston tallennus epäonnistui: ' + (error.message || 'tuntematon'));
+          return;
+        }
+      }
+
+      for (const pend of archiveHotHioPending) {
+        const hotP = parseInt(pend.hot.trim(), 10);
+        const hioP = parseInt(pend.hio.trim(), 10);
+        const hotV = pend.hot.trim() === '' || !Number.isFinite(hotP) ? 0 : Math.max(0, hotP);
+        const hioV = pend.hio.trim() === '' || !Number.isFinite(hioP) ? 0 : Math.max(0, hioP);
+        if (hotV === 0 && hioV === 0) continue;
+
+        let insert: Record<string, unknown> = {
+          tournament_name,
+          player_name: pend.player_name.trim(),
+          manager_name: '—',
+          team_name: ARCHIVE_HOT_HIO_AUX_TEAM_NAME,
+          player_score: 0,
+          player_rounds: 0,
+          earned_points: 0,
+          buy_price: null,
+          hot_rounds: hotV,
+          hio_count: hioV,
+        };
+        if (season_segment !== 'legacy') {
+          insert.season_segment = season_segment;
+        }
+
+        const missingCol = (err: { message?: string } | null, col: string) => {
+          const m = (err?.message || '').toLowerCase();
+          return m.includes(col) && (m.includes('column') || m.includes('schema') || m.includes('not exist'));
+        };
+
+        let insErr = (await supabase.from('tournament_results').insert(insert)).error;
+        if (insErr && missingCol(insErr, 'season_segment')) {
+          const { season_segment: _s, ...rest } = insert;
+          insert = rest;
+          insErr = (await supabase.from('tournament_results').insert(insert)).error;
+        }
+        if (insErr && missingCol(insErr, 'buy_price')) {
+          const { buy_price: _b, ...rest } = insert;
+          insert = rest;
+          insErr = (await supabase.from('tournament_results').insert(insert)).error;
+        }
+        if (insErr && (missingCol(insErr, 'hot_rounds') || missingCol(insErr, 'hio_count'))) {
+          alert(
+            'Uuden rivin lisäys epäonnistui (hot/hio -sarakkeet?): ' +
+              (insErr.message || 'tuntematon') +
+              '\n\nVarmista että tournament_results sisältää hot_rounds ja hio_count.'
+          );
+          return;
+        }
+        if (insErr) {
+          alert('Uuden rivin lisäys epäonnistui: ' + (insErr.message || 'tuntematon'));
+          return;
+        }
+      }
+
+      setArchiveHotHioPending([]);
+      setArchiveHotHioMsg('Tallennettu. Hall of Fame käyttää näitä lukuja koko kauden summassa.');
+      await refreshData();
+    } finally {
+      setArchiveHotHioSaving(false);
+    }
+  }
+
+  async function saveRoundParStrokes() {
+    setRoundParMessage(null);
+    const raw = roundParDraft.trim();
+    if (raw === '') {
+      setRoundParSaving(true);
+      try {
+        await updateTournamentRoundParStrokes(null);
+        setRoundParDirty(false);
+        setRoundParMessage('Tallennettu: ei kierroksen par-lukua (rd-*-CSV vaatii luvun).');
+      } finally {
+        setRoundParSaving(false);
+      }
+      return;
+    }
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n <= 0 || n > 200) {
+      setRoundParMessage('Anna kokonaisluku 1–200 tai jätä tyhjäksi.');
+      return;
+    }
+    setRoundParSaving(true);
+    try {
+      await updateTournamentRoundParStrokes(n);
+      setRoundParDirty(false);
+      setRoundParMessage('Tallennettu.');
+    } finally {
+      setRoundParSaving(false);
+    }
+  }
+
   const styles = {
     container: {
       position: 'relative' as const,
@@ -454,6 +723,39 @@ export default function AdminPanel({
         </div>
       </div>
 
+      <div
+        style={{
+          marginBottom: '18px',
+          padding: '12px 14px',
+          borderRadius: '10px',
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          fontSize: '12px',
+          lineHeight: 1.55,
+          color: 'rgba(255,255,255,0.62)',
+        }}
+      >
+        <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Lukitus</strong> estää uudet valinnat ja näyttää tulostaululla kaikkien rosterit.
+          Se <strong style={{ color: 'rgba(255,255,255,0.88)' }}>ei tyhjennä</strong> <span style={{ fontFamily: 'ui-monospace, monospace' }}>picks</span>-taulua eikä aloita uutta kierrosta.
+        </p>
+        <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Uusi kisa</strong> arkistoi tämän kisan valinnat ja pisteet historiaan, nollaa kenttäpelaajien tilastot, poistaa tämän turnauksen pick-rivit ja avaa seuraavan osion (
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>season_segment</span> +1). Tyhjä rosteri = tämä polku.
+        </p>
+        <p
+          style={{
+            margin: 0,
+            fontSize: '11px',
+            color: 'rgba(255,255,255,0.45)',
+            fontFamily: 'ui-monospace, monospace',
+            wordBreak: 'break-all',
+          }}
+        >
+          Vianetsintä: turnaus-id {tournamentId ? String(tournamentId) : '—'} · pick-rivejä tässä kisassa: {picksRowCountForActiveTournament}
+        </p>
+      </div>
+
       {/* Tournament Name Input */}
       <div style={styles.tournamentNameBox}>
         <div style={styles.labelRow}>
@@ -476,36 +778,250 @@ export default function AdminPanel({
         </div>
         <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
           Sama luku kaikille kierroksille tässä kisassa (esim. 54). CSV:n <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1</span>,{' '}
-          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_2</span>… -sarakkeiden heitot vähennetään tästä → par-ero fantasy-laskentaan. Vaihda luku kun kisa vaihtuu.
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_2</span>… -sarakkeiden heitot vähennetään tästä → par-ero fantasy-laskentaan.{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Tallenna</strong> kun olet valmis — arvo ei muutu tietokantaan ennen sitä.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
           <input
             type="number"
             min={1}
             max={200}
-            key={`rp-${activeTournament?.id ?? 'x'}`}
-            defaultValue={
-              activeTournament?.round_par_strokes != null && activeTournament.round_par_strokes > 0
-                ? activeTournament.round_par_strokes
-                : ''
-            }
-            onBlur={(e) => {
-              const v = e.target.value.trim();
-              if (v === '') {
-                void updateTournamentRoundParStrokes(null);
-                return;
-              }
-              const n = parseInt(v, 10);
-              void updateTournamentRoundParStrokes(Number.isFinite(n) && n > 0 ? n : null);
+            value={roundParDraft}
+            onChange={(e) => {
+              setRoundParDraft(e.target.value);
+              setRoundParDirty(true);
             }}
             placeholder="esim. 54"
             className="bp-input"
             style={{ maxWidth: '140px' }}
             aria-label="Kierroksen par heittoina"
           />
-          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Tyhjä = ei asetettu (rd-*-tuonti vaatii luvun).</span>
+          <button
+            type="button"
+            onClick={() => void saveRoundParStrokes()}
+            disabled={roundParSaving}
+            className="bp-btn-primary"
+            style={{ padding: '8px 14px', fontSize: '13px' }}
+          >
+            {roundParSaving ? 'Tallennetaan…' : 'Tallenna kierroksen par'}
+          </button>
+          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+            Tyhjä + tallenna = ei asetettu (rd-*-tuonti vaatii luvun).
+          </span>
         </div>
+        {roundParMessage ? (
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'rgba(167,243,208,0.95)' }} role="status">
+            {roundParMessage}
+          </p>
+        ) : null}
       </div>
+
+      {archiveHotHioGroups.length > 0 ? (
+        <div style={styles.tournamentNameBox}>
+          <div style={styles.labelRow}>
+            <div style={styles.dot('#fbbf24')} />
+            <label style={styles.label}>Arkiston Hot / HIO (vanhat kisat)</label>
+          </div>
+          <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+            Kisat, jotka arkistoitiin ennen hot_rounds- ja hio_count -sarakkeita, tallentuivat ilman näitä lukuja.
+            Täytä ne tähän jos haluat ensimmäisen (tai muun vanhan) kisan mukaan Hall of Famen{' '}
+            <strong style={{ color: 'rgba(255,255,255,0.85)' }}>Hot round -sankariin</strong> ja{' '}
+            <strong style={{ color: 'rgba(255,255,255,0.85)' }}>Holari-kuningas</strong> -laskentaan. Uudet arkistoinnit täyttävät kentät automaattisesti.
+            Jos pelaajalla oli hot/hio-määriä mutta häntä ei ollut kenenkään joukkueessa, lisää rivi pudotusvalikosta (tallennetaan uutena arkistorivinä).
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <select
+              className="bp-input"
+              style={{ minWidth: '220px', maxWidth: '100%' }}
+              value={archiveHotHioKey}
+              onChange={(e) => setArchiveHotHioKey(e.target.value)}
+              aria-label="Valitse arkistoitu kisa"
+            >
+              <option value="">Valitse arkistoitu kisa…</option>
+              {archiveHotHioGroups.map(([k]) => (
+                <option key={k} value={k}>
+                  {archiveHotHioGroupLabel(k)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="bp-btn-primary"
+              style={{ padding: '8px 14px', fontSize: '13px' }}
+              disabled={!archiveHotHioKey || archiveHotHioSaving}
+              onClick={() => void saveArchiveHotHioDrafts()}
+            >
+              {archiveHotHioSaving ? 'Tallennetaan…' : 'Tallenna tämän kisan Hot/HIO'}
+            </button>
+          </div>
+          {archiveHotHioMsg ? (
+            <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'rgba(167,243,208,0.95)' }} role="status">
+              {archiveHotHioMsg}
+            </p>
+          ) : null}
+          {archiveHotHioKey ? (
+            <>
+              <div
+                style={{
+                  marginBottom: '10px',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  alignItems: 'center',
+                }}
+              >
+                <select
+                  className="bp-input"
+                  value={archiveHotHioAddName}
+                  onChange={(e) => setArchiveHotHioAddName(e.target.value)}
+                  style={{ minWidth: '220px', maxWidth: '100%' }}
+                  aria-label="Pelaaja jota ei valittu ketään joukkueeseen"
+                >
+                  <option value="">Lisää pelaaja (ei ketään valinnut)…</option>
+                  {archiveHotHioAddableNames.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="bp-btn-primary"
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                  disabled={!archiveHotHioAddName.trim()}
+                  onClick={() => {
+                    const name = archiveHotHioAddName.trim();
+                    if (!name) return;
+        setArchiveHotHioPending((prev) => [
+          ...prev,
+          {
+            id: `pend-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`}`,
+            player_name: name,
+            hot: '',
+            hio: '',
+          },
+        ]);
+                    setArchiveHotHioAddName('');
+                  }}
+                >
+                  Lisää listaan
+                </button>
+              </div>
+              <div
+                style={{
+                  maxHeight: '320px',
+                  overflow: 'auto',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                }}
+              >
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(0,0,0,0.25)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px' }}>Tiimi</th>
+                      <th style={{ padding: '8px' }}>Pelaaja</th>
+                      <th style={{ padding: '8px' }}>Hot</th>
+                      <th style={{ padding: '8px' }}>HIO</th>
+                      <th style={{ padding: '8px', width: '72px' }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(archiveHotHioGroups.find(([k]) => k === archiveHotHioKey)?.[1] || []).map((r: any) => (
+                      <tr key={r.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                        <td style={{ padding: '6px 8px', color: 'rgba(255,255,255,0.75)' }}>{r.team_name || '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>{r.player_name || '—'}</td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            className="bp-input"
+                            style={{ width: '72px', padding: '4px 8px' }}
+                            value={archiveHotHioDrafts[r.id]?.hot ?? ''}
+                            onChange={(e) =>
+                              setArchiveHotHioDrafts((prev) => ({
+                                ...prev,
+                                [r.id]: { ...(prev[r.id] || { hot: '', hio: '' }), hot: e.target.value },
+                              }))
+                            }
+                            aria-label={`Hot ${r.player_name}`}
+                          />
+                        </td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            className="bp-input"
+                            style={{ width: '72px', padding: '4px 8px' }}
+                            value={archiveHotHioDrafts[r.id]?.hio ?? ''}
+                            onChange={(e) =>
+                              setArchiveHotHioDrafts((prev) => ({
+                                ...prev,
+                                [r.id]: { ...(prev[r.id] || { hot: '', hio: '' }), hio: e.target.value },
+                              }))
+                            }
+                            aria-label={`HIO ${r.player_name}`}
+                          />
+                        </td>
+                        <td style={{ padding: '4px 8px' }} />
+                      </tr>
+                    ))}
+                    {archiveHotHioPending.map((pend) => (
+                      <tr key={pend.id} style={{ borderTop: '1px solid rgba(251,191,36,0.35)' }}>
+                        <td style={{ padding: '6px 8px', color: 'rgba(251,191,36,0.9)' }}>
+                          {ARCHIVE_HOT_HIO_AUX_TEAM_NAME}
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>{pend.player_name}</td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            className="bp-input"
+                            style={{ width: '72px', padding: '4px 8px' }}
+                            value={pend.hot}
+                            onChange={(e) =>
+                              setArchiveHotHioPending((prev) =>
+                                prev.map((x) => (x.id === pend.id ? { ...x, hot: e.target.value } : x))
+                              )
+                            }
+                            aria-label={`Hot ${pend.player_name}`}
+                          />
+                        </td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <input
+                            type="number"
+                            min={0}
+                            className="bp-input"
+                            style={{ width: '72px', padding: '4px 8px' }}
+                            value={pend.hio}
+                            onChange={(e) =>
+                              setArchiveHotHioPending((prev) =>
+                                prev.map((x) => (x.id === pend.id ? { ...x, hio: e.target.value } : x))
+                              )
+                            }
+                            aria-label={`HIO ${pend.player_name}`}
+                          />
+                        </td>
+                        <td style={{ padding: '4px 8px' }}>
+                          <button
+                            type="button"
+                            className="bp-input"
+                            style={{ padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}
+                            onClick={() =>
+                              setArchiveHotHioPending((prev) => prev.filter((x) => x.id !== pend.id))
+                            }
+                          >
+                            Poista
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Tulosten tuonti CSV (Excel → Tallenna nimellä CSV UTF-8) */}
       <div style={styles.tournamentNameBox}>
@@ -529,7 +1045,7 @@ export default function AdminPanel({
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1;rd_2;rd_3</span>
           (voit lisätä <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_4</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_5</span>…) + valinnainen{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace' }}>hot_round_1;hio_1;…</span>. Aseta yläpuolelle{' '}
-          <strong>Kierroksen par (heitot)</strong> ennen tuontia — par-ero = heitot − tuo luku.
+          <strong>Kierroksen par (heitot)</strong> ja <strong>Tallenna kierroksen par</strong> ennen tuontia — par-ero = heitot − tuo luku.
           <br />
           Vaihtoehto: suora par-ero kierroksittain:{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>k1_par;k1_hot;k1_hio;…</span>
