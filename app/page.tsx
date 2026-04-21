@@ -19,7 +19,11 @@ import {
   historySeasonBucket,
   sortSeasonBucketsDescending,
 } from '../lib/seasonSegment';
-import { historyRowsForDisplay } from '../lib/archiveDisplay';
+import {
+  ARCHIVE_FIELD_SNAPSHOT_TEAM_NAME,
+  historyRowsForDisplay,
+  isArchiveFieldSnapshotRow,
+} from '../lib/archiveDisplay';
 import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib/hofSeasonStats';
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
 
@@ -27,6 +31,18 @@ import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerS
 const ADMIN_EMAIL = 'kimmo@gmail.com';
 
 const MIN_PLAYER_PRICE = 80_000;
+
+/** Arkistointi: fantasy-pisteet pelaajan tilastoista (sama kaava kuin pick-riveillä). */
+function archiveEarnedPointsFromPlayer(player: any): number {
+  const par = Number(player.par_score) || 0;
+  return (
+    (par < 0 ? Math.abs(par) * 2 : par * -1) +
+    Number(player.rounds_played) * 2 +
+    Number(player.hot_rounds) * 5 +
+    Number(player.hio_count) * 20 +
+    (Number(player.position_bonus) || 0)
+  );
+}
 
 // HINNOITTELUKAAVA: max(80 000, (Rating - 950) * 2600)
 const getPrice = (rating: number) => {
@@ -299,73 +315,94 @@ export default function Home() {
           ? currentPicks.filter((pick) => String(pick.tournament_id ?? '') === tid)
           : currentPicks || [];
 
-      if (picksForArchive.length > 0) {
-        picksForArchive.forEach((pick) => {
-          const player = players.find((p) => p.id === pick.player_id);
-          const profile = profiles.find((pr) => pr.id === pick.user_id);
+      const pickedPlayerIds = new Set<string>();
+      picksForArchive.forEach((pick) => {
+        const pid = pick.player_id != null ? String(pick.player_id) : '';
+        if (pid) pickedPlayerIds.add(pid);
+      });
 
-          if (player && profile) {
-            const par = Number(player.par_score) || 0;
-            const pts =
-              (par < 0 ? Math.abs(par) * 2 : par * -1) +
-              Number(player.rounds_played) * 2 +
-              Number(player.hot_rounds) * 5 +
-              Number(player.hio_count) * 20 +
-              (Number(player.position_bonus) || 0);
+      picksForArchive.forEach((pick) => {
+        const player = players.find((p) => p.id === pick.player_id);
+        const profile = profiles.find((pr) => pr.id === pick.user_id);
 
-            archiveData.push({
-              tournament_name: kisanNimi,
-              manager_name: profile.full_name || 'Tuntematon',
-              team_name: profile.team_name || 'Nimetön tiimi',
-              user_id: pick.user_id,
-              player_name: player.name,
-              player_score: player.par_score,
-              player_rounds: player.rounds_played,
-              earned_points: pts,
-              buy_price: pick.buy_price ?? null,
-              season_segment: segmentEnding,
-              hot_rounds: Number(player.hot_rounds) || 0,
-              hio_count: Number(player.hio_count) || 0,
-            });
-          }
+        if (player && profile) {
+          const pts = archiveEarnedPointsFromPlayer(player);
+
+          archiveData.push({
+            tournament_name: kisanNimi,
+            manager_name: profile.full_name || 'Tuntematon',
+            team_name: profile.team_name || 'Nimetön tiimi',
+            user_id: pick.user_id,
+            player_name: player.name,
+            player_score: player.par_score,
+            player_rounds: player.rounds_played,
+            earned_points: pts,
+            buy_price: pick.buy_price ?? null,
+            season_segment: segmentEnding,
+            hot_rounds: Number(player.hot_rounds) || 0,
+            hio_count: Number(player.hio_count) || 0,
+          });
+        }
+      });
+
+      players.forEach((player: any) => {
+        if (!player?.is_active) return;
+        const pid = player.id != null ? String(player.id) : '';
+        if (!pid || pickedPlayerIds.has(pid)) return;
+
+        const pts = archiveEarnedPointsFromPlayer(player);
+        archiveData.push({
+          tournament_name: kisanNimi,
+          manager_name: '—',
+          team_name: ARCHIVE_FIELD_SNAPSHOT_TEAM_NAME,
+          user_id: null,
+          player_name: player.name,
+          player_score: player.par_score,
+          player_rounds: player.rounds_played,
+          earned_points: pts,
+          buy_price: null,
+          season_segment: segmentEnding,
+          hot_rounds: Number(player.hot_rounds) || 0,
+          hio_count: Number(player.hio_count) || 0,
         });
-        if (archiveData.length > 0) {
-          let batch: any[] = archiveData;
-          let insErr = (await supabase.from('tournament_results').insert(batch)).error;
-          if (insErr && missingColumnErr(insErr, 'user_id')) {
-            batch = batch.map(({ user_id, ...rest }) => rest);
-            insErr = (await supabase.from('tournament_results').insert(batch)).error;
-          }
-          if (insErr && missingColumnErr(insErr, 'buy_price')) {
-            batch = batch.map(({ buy_price, ...rest }) => rest);
-            insErr = (await supabase.from('tournament_results').insert(batch)).error;
-          }
-          if (insErr && missingColumnErr(insErr, 'season_segment')) {
-            batch = batch.map(({ season_segment, ...rest }) => rest);
-            insErr = (await supabase.from('tournament_results').insert(batch)).error;
-          }
-          if (
-            insErr &&
-            (missingColumnErr(insErr, 'hot_rounds') || missingColumnErr(insErr, 'hio_count'))
-          ) {
-            batch = batch.map(({ hot_rounds, hio_count, ...rest }) => rest);
-            insErr = (await supabase.from('tournament_results').insert(batch)).error;
-          }
-          if (insErr) {
-            const errText = formatSupabaseErr(insErr);
-            const lower = errText.toLowerCase();
-            const schemaHint =
-              lower.includes('column') || lower.includes('schema cache')
-                ? '\n\nTietokannasta puuttuu sarake (tai skeema on vanhentunut). Katso repo: supabase/migrations/.'
-                : '';
-            const rlsHint =
-              !schemaHint &&
-              (lower.includes('policy') || lower.includes('permission') || lower.includes('rls'))
-                ? '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää INSERT tournament_results -käytäntö admin-käyttäjälle.'
-                : '';
-            alert('Historiikkiin tallennus epäonnistui: ' + errText + schemaHint + rlsHint);
-            return;
-          }
+      });
+
+      if (archiveData.length > 0) {
+        let batch: any[] = archiveData;
+        let insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        if (insErr && missingColumnErr(insErr, 'user_id')) {
+          batch = batch.map(({ user_id, ...rest }) => rest);
+          insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        }
+        if (insErr && missingColumnErr(insErr, 'buy_price')) {
+          batch = batch.map(({ buy_price, ...rest }) => rest);
+          insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        }
+        if (insErr && missingColumnErr(insErr, 'season_segment')) {
+          batch = batch.map(({ season_segment, ...rest }) => rest);
+          insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        }
+        if (
+          insErr &&
+          (missingColumnErr(insErr, 'hot_rounds') || missingColumnErr(insErr, 'hio_count'))
+        ) {
+          batch = batch.map(({ hot_rounds, hio_count, ...rest }) => rest);
+          insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        }
+        if (insErr) {
+          const errText = formatSupabaseErr(insErr);
+          const lower = errText.toLowerCase();
+          const schemaHint =
+            lower.includes('column') || lower.includes('schema cache')
+              ? '\n\nTietokannasta puuttuu sarake (tai skeema on vanhentunut). Katso repo: supabase/migrations/.'
+              : '';
+          const rlsHint =
+            !schemaHint &&
+            (lower.includes('policy') || lower.includes('permission') || lower.includes('rls'))
+              ? '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää INSERT tournament_results -käytäntö admin-käyttäjälle.'
+              : '';
+          alert('Historiikkiin tallennus epäonnistui: ' + errText + schemaHint + rlsHint);
+          return;
         }
       }
 
@@ -853,8 +890,10 @@ export default function Home() {
         )
       : [];
 
-  /** Ei näytetä tuloksissa / historiassa — vain HoF hot/hio -laskenta (lisätty Administa). */
+  /** Ei näytetä tuloksissa / historiassa — vain HoF hot/hio -laskenta (lisätty Administa). Kenttätulosrivit mukana pelaajakausi-laskennassa. */
   const historyForDisplay = historyRowsForDisplay(history);
+  /** Kisa-arkisto / joukkueiden näkymät: ei kenttäsnapshot-rivejä (ei fantasy-valintaa). */
+  const historyForFantasyArchiveUi = historyForDisplay.filter((row) => !isArchiveFieldSnapshotRow(row));
 
   const activeTournamentNameForStats = activeTournament?.name || 'Aktiivinen kisa';
   const activeSeasonSegment =
@@ -922,6 +961,7 @@ export default function Home() {
     };
 
     historyForDisplay.forEach((row: any) => {
+      if (isArchiveFieldSnapshotRow(row)) return;
       const teamKey = stableKeyFromHistoryRow(row);
       const b = historySeasonBucket(row);
       const pts = Number(row.earned_points) || 0;
@@ -986,6 +1026,7 @@ export default function Home() {
       m.set(playerName, (m.get(playerName) || 0) + pts);
     };
     historyForDisplay.forEach((row: any) => {
+      if (isArchiveFieldSnapshotRow(row)) return;
       const name = row.player_name;
       if (!name) return;
       addPtsHof(teamKeyFromHistoryRowHof(row), name, Number(row.earned_points) || 0);
@@ -1090,6 +1131,7 @@ export default function Home() {
 
     const popularity = new Map<string, Set<string>>();
     historyForDisplay.forEach((row: any) => {
+      if (isArchiveFieldSnapshotRow(row)) return;
       const playerName = row.player_name;
       if (!playerName) return;
       const b = historySeasonBucket(row);
@@ -1117,6 +1159,7 @@ export default function Home() {
 
     const managerTournamentPoints = new Map<string, number>();
     historyForDisplay.forEach((row: any) => {
+      if (isArchiveFieldSnapshotRow(row)) return;
       const b = historySeasonBucket(row);
       const manager = row.team_name || row.manager_name || 'Tiimi';
       const key = `${b}||${manager}`;
@@ -1261,7 +1304,7 @@ export default function Home() {
 
   const historyArchiveGroups = (() => {
     const map = new Map<string, any[]>();
-    for (const h of historyForDisplay) {
+    for (const h of historyForFantasyArchiveUi) {
       const key = historySeasonBucket(h);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(h);
@@ -1662,13 +1705,13 @@ export default function Home() {
           </div>
 
           <div className="pm-grid">
-            {historyForDisplay.length === 0 && (
+            {historyForFantasyArchiveUi.length === 0 && (
               <div className="col-span-full rounded-[10px] border border-dashed border-white/15 bg-white/[0.03] p-5 text-center text-sm text-white/55 backdrop-blur">
                 Historiikissa ei ole vielä turnauksia. Kun aloitat uuden kisan administa, nykyinen kisa arkistoidaan tänne.
               </div>
             )}
 
-            {historyForDisplay.length > 0 &&
+            {historyForFantasyArchiveUi.length > 0 &&
               historyArchiveGroups.map(({ key, rows, title, segment }) => {
                   const tournamentRows = rows;
                   const heading = segment != null ? `${title} (osa ${segment})` : title;
