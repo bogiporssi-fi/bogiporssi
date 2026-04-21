@@ -30,7 +30,7 @@ import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerS
 // ADMIN-TUNNUS
 const ADMIN_EMAIL = 'kimmo@gmail.com';
 
-const MIN_PLAYER_PRICE = 80_000;
+const MIN_PLAYER_PRICE = 100_000;
 
 /** Arkistointi: fantasy-pisteet pelaajan tilastoista (sama kaava kuin pick-riveillä). */
 function archiveEarnedPointsFromPlayer(player: any): number {
@@ -44,7 +44,7 @@ function archiveEarnedPointsFromPlayer(player: any): number {
   );
 }
 
-// HINNOITTELUKAAVA: max(80 000, (Rating - 950) * 2600)
+// HINNOITTELUKAAVA: max(100 000, (Rating - 950) * 2600)
 const getPrice = (rating: number) => {
   const diff = rating - 950;
   const computed = diff > 0 ? diff * 2600 : 0;
