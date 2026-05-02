@@ -25,6 +25,8 @@ interface LeaderboardsProps {
   profiles: any[];
   isLocked: boolean;
   viewerUserId: string;
+  /** Admin näkee kaikkien rosterit myös ilman lukitusta (muuten vain oma joukkue). */
+  viewerIsAdmin?: boolean;
   allTeamsPicks: any[];
   players: any[];
   getPrice: (rating: number) => number;
@@ -93,7 +95,7 @@ function TournamentPickRows({
       <TeamRoundTotalsStrip picks={picks} players={players} variant="roster" className="mb-3" />
       <div className="space-y-2">
       {picks.map((pick) => {
-        const pl = players.find((p) => p.id === pick.player_id);
+        const pl = players.find((p) => String(p.id) === String(pick.player_id));
         const r = pl?.official_rating;
         const rating = r !== null && r !== undefined && r !== "" ? Number(r) : NaN;
         const price =
@@ -284,6 +286,7 @@ export default function Leaderboards({
   profiles,
   isLocked,
   viewerUserId,
+  viewerIsAdmin = false,
   allTeamsPicks,
   players,
   getPrice,
@@ -302,9 +305,10 @@ export default function Leaderboards({
   const sub = boardMode === "teams" ? subTeams : subPlayers;
 
   const canSeeRoster = (entry: BoardEntry) => {
+    if (viewerIsAdmin) return true;
     if (isLocked) return true;
     const uid = resolveEntryUid(entry, tab, profiles);
-    return uid === viewerUserId;
+    return String(uid ?? '') === String(viewerUserId ?? '');
   };
 
   return (
@@ -315,9 +319,11 @@ export default function Leaderboards({
           <p className="pm-sub">{sub}</p>
           {boardMode === "teams" && (
             <p className="mt-1 text-[11px] text-white/40">
-              {!isLocked
-                ? "Avaa oma rivi nähdäksesi rosterisi. Lukitse kisa nähdäksesi myös muiden joukkueiden pelaajat ja hankinnat."
-                : "Avaa rivi nähdäksesi valitut pelaajat (pisteet, rating, hankinta)."}
+              {viewerIsAdmin
+                ? "Admin: näet kaikkien joukkueiden rosterit. Muilla käyttäjillä näkyy vain oma joukkue, ellei kisa ole lukittu."
+                : !isLocked
+                  ? "Avaa oma rivi nähdäksesi rosterisi. Lukitse kisa nähdäksesi myös muiden joukkueiden pelaajat ja hankinnat."
+                  : "Avaa rivi nähdäksesi valitut pelaajat (pisteet, rating, hankinta)."}
             </p>
           )}
         </div>
@@ -389,7 +395,7 @@ export default function Leaderboards({
           let expandedBody: React.ReactNode = null;
 
           if (show && tab === "tournament" && entryUid) {
-            const picks = allTeamsPicks.filter((p) => p.user_id === entryUid);
+            const picks = allTeamsPicks.filter((p) => String(p.user_id ?? '') === String(entryUid));
             expandable = picks.length > 0;
             if (expandable) {
               expandedBody = (

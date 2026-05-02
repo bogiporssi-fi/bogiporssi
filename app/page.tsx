@@ -26,9 +26,7 @@ import {
 } from '../lib/archiveDisplay';
 import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib/hofSeasonStats';
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
-
-// ADMIN-TUNNUS
-const ADMIN_EMAIL = 'kimmo@gmail.com';
+import { ADMIN_EMAIL } from '../lib/adminEmail';
 
 const MIN_PLAYER_PRICE = 130_000;
 
@@ -86,7 +84,7 @@ function formatSupabaseErr(err: unknown): string {
   );
 }
 
-/** Sama joukkue valittujen pelaajien kannalta (järjestys ei vaikuta) — pelaajatorin luonnoksen säilytys loadData()-kutsuilla. */
+/** Sama joukkue valittujen pelaajien kannalta (järjestys ei vaikuta) — luonnoksen säilytys saman turnauksen sisällä toistuvilla loadData()-kutsuilla. */
 function teamPickIdsSignature(teamPicks: any[]): string {
   return teamPicks
     .map((pick: any) => String(pick?.player_id ?? ''))
@@ -130,8 +128,8 @@ export default function Home() {
   const [teamLogoPath, setTeamLogoPath] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const teamLogoFileRef = useRef<HTMLInputElement>(null);
-  /** Estää tyhjän React-luonnoksen ([] vs. DB-joukkue) sekoittumisen tallentamattomaan luonnokseen ensihaun yhteydessä. */
-  const draftHydratedForUserRef = useRef<string | null>(null);
+  /** `${userId}:${tournamentId}` — uusi turnaus nollaa luonnoksen; sama avain sallii allekirjoitusvertailun tallentamattomalle luonnokselle. */
+  const draftHydratedKeyRef = useRef<string | null>(null);
 
   const BUDGET = 1000000;
 
@@ -146,7 +144,7 @@ export default function Home() {
       void (async () => {
         await recoverFromStaleSupabaseAuth();
         if (cancelled) return;
-        draftHydratedForUserRef.current = null;
+        draftHydratedKeyRef.current = null;
         setUser(null);
         setLoading(false);
       })();
@@ -159,7 +157,7 @@ export default function Home() {
       if (error && isRefreshTokenAuthError(error)) {
         await recoverFromStaleSupabaseAuth();
         if (cancelled) return;
-        draftHydratedForUserRef.current = null;
+        draftHydratedKeyRef.current = null;
         setUser(null);
         setLoading(false);
         return;
@@ -177,7 +175,7 @@ export default function Home() {
       if (session?.user) {
         loadData();
       } else {
-        draftHydratedForUserRef.current = null;
+        draftHydratedKeyRef.current = null;
         setLoading(false);
       }
     });
@@ -225,6 +223,8 @@ export default function Home() {
           ...pick,
           players: playerDetails, // Supabase-tyylinen liitos
           ...playerDetails, // Litteä tyyli (nimi, rating jne. suoraan tässä)
+          // playerDetails sisältää id:n → ylikirjoittaisi pick-rivin id:n; picks.id tarvitaan mm. admin-RPC:hen
+          id: pick.id,
         };
       });
 
@@ -234,7 +234,7 @@ export default function Home() {
       const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
       if (sessionErr && isRefreshTokenAuthError(sessionErr)) {
         await recoverFromStaleSupabaseAuth();
-        draftHydratedForUserRef.current = null;
+        draftHydratedKeyRef.current = null;
         setUser(null);
         return;
       }
@@ -244,9 +244,12 @@ export default function Home() {
         // Suodatetaan omat valinnat valmiiksi liimatusta listasta
         const myTeam = allPicksWithPlayers.filter((pick) => pick.user_id === myId);
         setTeam(myTeam);
-        // Ensimmäinen täyttö: updater + ref(ref asetetaan updaterissa) tuplakutsutaan Strict Modessa → luonnos jäi [].
-        if (draftHydratedForUserRef.current !== myId) {
-          draftHydratedForUserRef.current = myId;
+        const tournamentKey =
+          t?.id != null && String(t.id) !== '' ? String(t.id) : 'none';
+        const draftKey = `${myId}:${tournamentKey}`;
+        // Uusi avain (esim. uusi kisa / ensimmäinen haku): luonnos = DB. Sama avain: säilytetään tallentamaton luonnos.
+        if (draftHydratedKeyRef.current !== draftKey) {
+          draftHydratedKeyRef.current = draftKey;
           setDraftTeam(myTeam);
         } else {
           setDraftTeam((prev) =>
@@ -260,7 +263,7 @@ export default function Home() {
           setTeamLogoPath(typeof myProfile?.team_logo_path === 'string' ? myProfile.team_logo_path : null);
         }
       } else {
-        draftHydratedForUserRef.current = null;
+        draftHydratedKeyRef.current = null;
         setTeam([]);
         setDraftTeam([]);
       }
@@ -1438,6 +1441,9 @@ export default function Home() {
           startNewTournament={startNewTournament}
           toggleTournamentLock={toggleTournamentLock}
           picksRowCountForActiveTournament={picksForActiveTournament.length}
+          allTeamsPicks={picksForActiveTournament}
+          profiles={profiles}
+          getPrice={getPrice}
           saveAdminStats={saveAdminStats}
         />
       )}
@@ -1585,6 +1591,7 @@ export default function Home() {
             profiles={profiles}
             isLocked={!!activeTournament?.is_locked}
             viewerUserId={user.id}
+            viewerIsAdmin={user.email === ADMIN_EMAIL}
             allTeamsPicks={picksForActiveTournament}
             players={players}
             getPrice={getPrice}

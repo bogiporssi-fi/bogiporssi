@@ -19,6 +19,10 @@ interface AdminPanelProps {
   toggleTournamentLock: () => void;
   /** Aktiivisen turnauksen pick-rivejä (Tulokset / vianetsintä). */
   picksRowCountForActiveTournament: number;
+  /** Kaikki managerien pickit tässä turnauksessa (rosterit). */
+  allTeamsPicks: any[];
+  profiles: any[];
+  getPrice: (rating: number) => number;
   updateTournamentName: (newName: string) => void;
   updateTournamentRoundParStrokes: (value: number | null) => void | Promise<void>;
   saveAdminStats: (pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) => void;
@@ -72,12 +76,126 @@ export default function AdminPanel({
   startNewTournament,
   toggleTournamentLock,
   picksRowCountForActiveTournament,
+  allTeamsPicks,
+  profiles,
+  getPrice,
   saveAdminStats,
   updateTournamentName,
   updateTournamentRoundParStrokes,
 }: AdminPanelProps) {
   const resultsCsvRef = useRef<HTMLInputElement>(null);
   const tournamentId = activeTournament?.id;
+
+  const [swapUserId, setSwapUserId] = useState('');
+  const [swapPickId, setSwapPickId] = useState('');
+  const [swapNewPlayerId, setSwapNewPlayerId] = useState('');
+  const [swapSaving, setSwapSaving] = useState(false);
+
+  const swapTeamOptions = useMemo(() => {
+    const ids = Array.from(new Set((allTeamsPicks || []).map((p: any) => String(p.user_id ?? '')).filter(Boolean)));
+    return ids
+      .map((uid) => {
+        const prof = (profiles || []).find((pr: any) => String(pr.id) === uid);
+        const label =
+          (prof?.team_name && String(prof.team_name).trim()) ||
+          (prof?.email && String(prof.email).trim()) ||
+          uid.slice(0, 8) + '…';
+        return { userId: uid, label };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, 'fi'));
+  }, [allTeamsPicks, profiles]);
+
+  const swapPicksForTeam = useMemo(() => {
+    if (!swapUserId || !tournamentId) return [];
+    return (allTeamsPicks || []).filter(
+      (p: any) => String(p.user_id) === swapUserId && String(p.tournament_id ?? '') === String(tournamentId)
+    );
+  }, [allTeamsPicks, swapUserId, tournamentId]);
+
+  const swapNewPlayerOptions = useMemo(() => {
+    if (!swapPickId) return [];
+    const pick = swapPicksForTeam.find((p: any) => String(p.id) === swapPickId);
+    if (!pick) return [];
+    const oldPid = String(pick.player_id ?? '');
+    const otherIds = new Set(
+      swapPicksForTeam.filter((p: any) => String(p.id) !== swapPickId).map((p: any) => String(p.player_id ?? ''))
+    );
+    const out = (players || [])
+      .filter((pl: any) => pl.is_active && String(pl.id) !== oldPid && !otherIds.has(String(pl.id)))
+      .map((pl: any) => ({
+        id: String(pl.id),
+        name: String(pl.name || '').trim() || String(pl.id),
+        rating: Number(pl.official_rating) || 950,
+      }));
+    out.sort((a, b) => a.name.localeCompare(b.name, 'fi'));
+    return out;
+  }, [players, swapPickId, swapPicksForTeam]);
+
+  useEffect(() => {
+    setSwapPickId('');
+    setSwapNewPlayerId('');
+  }, [swapUserId]);
+
+  useEffect(() => {
+    setSwapNewPlayerId('');
+  }, [swapPickId]);
+
+  async function applyAdminPickSwap() {
+    if (!tournamentId || !swapPickId || !swapNewPlayerId) {
+      alert('Valitse joukkue, poistuva valinta ja uusi pelaaja.');
+      return;
+    }
+    const pick = swapPicksForTeam.find((p: any) => String(p.id) === swapPickId);
+    if (!pick) return;
+    if (String(pick.player_id) === swapNewPlayerId) {
+      alert('Uusi pelaaja on sama kuin nykyinen.');
+      return;
+    }
+    const newPl = players.find((p: any) => String(p.id) === swapNewPlayerId);
+    if (!newPl) {
+      alert('Uutta pelaajaa ei löytynyt listasta.');
+      return;
+    }
+    const otherIds = new Set(
+      swapPicksForTeam.filter((p: any) => String(p.id) !== swapPickId).map((p: any) => String(p.player_id ?? ''))
+    );
+    if (otherIds.has(swapNewPlayerId)) {
+      alert('Tämä pelaaja on jo samassa joukkueessa toisena valintana.');
+      return;
+    }
+    const buy_price = getPrice(Number(newPl.official_rating) || 950);
+    setSwapSaving(true);
+    try {
+      const { data: rpcId, error } = await supabase.rpc('admin_replace_pick', {
+        p_pick_id: swapPickId,
+        p_new_player_id: swapNewPlayerId,
+        p_buy_price: buy_price,
+        p_tournament_id: tournamentId,
+      });
+      if (error) {
+        const msg = error.message || 'tuntematon';
+        if (/function .* does not exist|Could not find the function/i.test(msg)) {
+          alert(
+            'Tietokannasta puuttuu funktio admin_replace_pick. Aja Supabasessa SQL Editorissa tiedosto supabase/migrations/20260502_admin_replace_pick_rpc.sql'
+          );
+          return;
+        }
+        alert('Vaihto epäonnistui: ' + msg);
+        return;
+      }
+      if (rpcId == null) {
+        alert(
+          'Yhtään riviä ei päivitetty (väärä pick-id tai turnaus ei täsmää). Tarkista Supabase Table editor → picks.'
+        );
+        return;
+      }
+      await refreshData();
+      alert('Pelaaja vaihdettu.');
+      setSwapNewPlayerId('');
+    } finally {
+      setSwapSaving(false);
+    }
+  }
 
   const [roundParDraft, setRoundParDraft] = useState('');
   const [roundParDirty, setRoundParDirty] = useState(false);
@@ -754,6 +872,98 @@ export default function AdminPanel({
         >
           Vianetsintä: turnaus-id {tournamentId ? String(tournamentId) : '—'} · pick-rivejä tässä kisassa: {picksRowCountForActiveTournament}
         </p>
+      </div>
+
+      <div style={styles.tournamentNameBox}>
+        <div style={styles.labelRow}>
+          <div style={styles.dot('#a78bfa')} />
+          <label style={styles.label}>Pelaajavaihto (admin)</label>
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+          Korvaa yhden managerin valinnan toisella pelaajalla ilman että koko turnausta avataan. Tarkoitus esim. pois jääneen heittäjän tilalle ennen pistetietoja.{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Uusi ostorivi</strong> lasketaan nykyisen rating-kaavan mukaan; cache-kenttä{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.85)' }}>earned_points</span> nollataan.
+        </p>
+        {!tournamentId ? (
+          <p style={{ margin: 0, fontSize: '12px', color: 'rgba(248,113,113,0.9)' }}>Ei aktiivista turnausta.</p>
+        ) : swapTeamOptions.length === 0 ? (
+          <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+            Ei tallennettuja joukkueita tässä turnauksessa.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '520px' }}>
+            <select
+              className="bp-input"
+              value={swapUserId}
+              onChange={(e) => setSwapUserId(e.target.value)}
+              aria-label="Valitse managerin joukkue"
+            >
+              <option value="">Valitse joukkue…</option>
+              {swapTeamOptions.map((o) => (
+                <option key={o.userId} value={o.userId}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {swapUserId ? (
+              <>
+                <select
+                  className="bp-input"
+                  value={swapPickId}
+                  onChange={(e) => setSwapPickId(e.target.value)}
+                  aria-label="Poistuva pelaaja"
+                  disabled={swapPicksForTeam.length === 0}
+                >
+                  <option value="">Valitse poistuva pelaaja…</option>
+                  {swapPicksForTeam.map((p: any) => {
+                    const name =
+                      p?.players?.name ||
+                      p?.name ||
+                      (players || []).find((pl: any) => pl.id === p.player_id)?.name ||
+                      String(p.player_id);
+                    const rat = p?.players?.official_rating ?? p?.official_rating;
+                    const rLabel = rat != null && rat !== '' ? ` (${rat})` : '';
+                    return (
+                      <option key={p.id} value={String(p.id)}>
+                        {name}
+                        {rLabel}
+                      </option>
+                    );
+                  })}
+                </select>
+                <select
+                  className="bp-input"
+                  value={swapNewPlayerId}
+                  onChange={(e) => setSwapNewPlayerId(e.target.value)}
+                  aria-label="Uusi pelaaja"
+                  disabled={!swapPickId || swapNewPlayerOptions.length === 0}
+                >
+                  <option value="">
+                    {!swapPickId
+                      ? 'Valitse ensin poistuva…'
+                      : swapNewPlayerOptions.length === 0
+                        ? 'Ei kelvollista korvaajaa (kaikki jo joukkueessa?)'
+                        : 'Valitse uusi pelaaja…'}
+                  </option>
+                  {swapNewPlayerOptions.map((pl) => (
+                    <option key={pl.id} value={pl.id}>
+                      {pl.name} — rating {pl.rating} — {getPrice(pl.rating).toLocaleString('fi-FI')} €
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="bp-btn-primary"
+                  style={{ padding: '8px 14px', fontSize: '13px', alignSelf: 'flex-start' }}
+                  disabled={swapSaving || !swapPickId || !swapNewPlayerId}
+                  onClick={() => void applyAdminPickSwap()}
+                >
+                  {swapSaving ? 'Tallennetaan…' : 'Vaihda pelaaja'}
+                </button>
+              </>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* Tournament Name Input */}
