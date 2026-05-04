@@ -238,15 +238,6 @@ export default function PlayerCard({
               })}
             </div>
           )}
-          {formHistory.length > 0 && (
-            <p className="pm-pc-footnote">
-              <strong>Bonus</strong> = sijoitusbonus (1. 10 p, 2.–3. 5 p, 4.–10. 2 p).{" "}
-              <strong>Sija</strong> = fantasy-kokonaispisteillä laskettu sijoitus kentällä (muoto{" "}
-              <code className="pm-pc-footnote-code">sija/kenttä</code>
-              ). Tasapelissä sama pistemäärä → sama sija.{" "}
-              <strong>Yht.</strong> = tilastopisteet + bonus (arkiston summa).
-            </p>
-          )}
         </section>
 
         {seasonInfo && (
