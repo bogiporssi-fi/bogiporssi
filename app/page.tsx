@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { isRefreshTokenAuthError, recoverFromStaleSupabaseAuth, supabase } from '../lib/supabase';
 import AdminPanel from './components/AdminPanel';
 import PlayerMarket from './components/PlayerMarket';
+import PlayerCard from './components/PlayerCard';
 import UserTeam from './components/UserTeam';
 import Leaderboards from './components/Leaderboards';
 import HallOfFame from './components/HallOfFame';
@@ -124,6 +125,13 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [adminSearch, setAdminSearch] = useState('');
   const [teamNameInput, setTeamNameInput] = useState('');
+  /** Pelaajakortti-modaali: pelaajan id pelaajatorilta. */
+  const [openPlayerId, setOpenPlayerId] = useState<string | null>(null);
+
+  // Modaali sulkeutuu automaattisesti kun käyttäjä vaihtaa pois pelaajatori-välilehdeltä
+  useEffect(() => {
+    if (mainTab !== 'market') setOpenPlayerId(null);
+  }, [mainTab]);
   /** Supabase Storage -polku (team-logos / {userId}/logo.ext) */
   const [teamLogoPath, setTeamLogoPath] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -1329,6 +1337,11 @@ export default function Home() {
       });
   })();
 
+  const openCardPlayer =
+    openPlayerId != null
+      ? players.find((p: any) => String(p?.id ?? "") === String(openPlayerId))
+      : null;
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6">
       <header className="bp-header bp-card mb-5 p-5 md:p-6">
@@ -1460,10 +1473,22 @@ export default function Home() {
           onSelect={selectDraftPlayer}
           onRemove={removeDraftPlayer}
           onSave={saveDraftTeam}
+          onPlayerClick={(id) => setOpenPlayerId(id)}
           getPrice={getPrice}
           teamLogoPath={teamLogoPath}
           teamLogoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
           teamDisplayName={teamDisplayName}
+        />
+      )}
+
+      {openCardPlayer && (
+        <PlayerCard
+          player={openCardPlayer}
+          players={players}
+          history={history}
+          activeTournament={activeTournament}
+          getPrice={getPrice}
+          onClose={() => setOpenPlayerId(null)}
         />
       )}
 

@@ -14,6 +14,7 @@ interface PlayerMarketProps {
   onSelect: (id: string, rating: number) => void;
   onRemove: (playerId: string) => void;
   onSave: () => void;
+  onPlayerClick?: (playerId: string) => void;
   getPrice: (rating: number) => number;
   teamLogoPath?: string | null;
   teamLogoId?: string | null;
@@ -43,6 +44,7 @@ export default function PlayerMarket({
   onSelect,
   onRemove,
   onSave,
+  onPlayerClick,
   getPrice,
   teamLogoPath,
   teamLogoId,
@@ -226,12 +228,31 @@ export default function PlayerMarket({
             return (
               <article key={p.id} className="pm-card">
                 <div className={["pm-row-dense", isPicked ? "pm-row-dense--team" : ""].filter(Boolean).join(" ")}>
-                  <div className="pm-avatar" aria-hidden>
-                    {initials(p.name)}
-                  </div>
-                  <h3 className="pm-name" title={p.name}>
-                    {p.name}
-                  </h3>
+                  {onPlayerClick ? (
+                    <button
+                      type="button"
+                      onClick={() => onPlayerClick(p.id)}
+                      className="pm-name-btn"
+                      aria-label={`Avaa pelaajakortti: ${p.name}`}
+                      title="Avaa pelaajakortti"
+                    >
+                      <span className="pm-avatar" aria-hidden>
+                        {initials(p.name)}
+                      </span>
+                      <span className="pm-name" title={p.name}>
+                        {p.name}
+                      </span>
+                    </button>
+                  ) : (
+                    <>
+                      <div className="pm-avatar" aria-hidden>
+                        {initials(p.name)}
+                      </div>
+                      <h3 className="pm-name" title={p.name}>
+                        {p.name}
+                      </h3>
+                    </>
+                  )}
                   <div className="pm-nums" aria-label="Rating ja hinta">
                     <span className="pm-tag pm-tag-rating">
                       <span className="pm-tag-label">Rating</span>

@@ -12,6 +12,8 @@
   --bp-muted: rgba(255, 255, 255, 0.64);
   --bp-emerald: #34d399; /* emerald-400 */
   --bp-gold: #fbbf24;    /* amber-400 */
+  /* Modaalit: täysin peittävä pinta (ei laskeutuu --bp-surface 4%:iin) */
+  --bp-modal-surface: #1c1c1c;
 }
 
 body {
@@ -1588,4 +1590,312 @@ body {
   padding: 0.28rem 0.48rem;
   list-style: none;
   margin-left: -0.85rem;
+}
+
+/* Pelaajatori — avaa pelaajakortti (nimi + avatar) */
+.pm-name-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.pm-name-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.pm-name-btn:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.65);
+  outline-offset: 2px;
+}
+.pm-name-btn .pm-name {
+  margin: 0;
+  font-weight: 800;
+}
+.pm-name-btn .pm-avatar {
+  flex-shrink: 0;
+}
+
+/* Pelaajakortti-modaali (PlayerCard) */
+.pm-pc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+@media (min-width: 640px) {
+  .pm-pc-overlay {
+    align-items: center;
+    padding: 1rem;
+  }
+}
+
+.pm-pc-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: min(92vh, 720px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0;
+  border-radius: 16px 16px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+  background: var(--bp-modal-surface);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  /* Varmistaa peittävyyden: ei lasisefektiä taustan läpi */
+  isolation: isolate;
+}
+@media (min-width: 640px) {
+  .pm-pc-modal {
+    border-radius: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    max-height: min(85vh, 680px);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.pm-pc-handle {
+  flex-shrink: 0;
+  height: 4px;
+  margin: 10px auto 6px;
+  width: 36px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+@media (min-width: 640px) {
+  .pm-pc-handle {
+    display: none;
+  }
+}
+
+.pm-pc-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 14px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pm-pc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pm-pc-head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pm-pc-avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 13px;
+  border-radius: 12px;
+}
+
+.pm-pc-title {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #fff;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.pm-pc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pm-pc-close {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -6px 0 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.pm-pc-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.pm-pc-close:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.65);
+  outline-offset: 2px;
+}
+
+.pm-pc-section {
+  padding: 12px 14px 14px;
+}
+
+.pm-pc-section-title {
+  margin: 0 0 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.pm-pc-empty {
+  margin: 0;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.45;
+}
+
+.pm-pc-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pm-pc-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px 32px 32px 32px 38px 52px 54px;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.78rem;
+}
+
+.pm-pc-history-head {
+  font-weight: 800;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 10px;
+}
+
+.pm-pc-h-tournament {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-pc-h-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.pm-pc-h-pts {
+  text-align: right;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fde68a;
+}
+
+.pm-pc-h-sij {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: rgba(253, 230, 138, 0.92);
+}
+
+.pm-pc-h-place {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.76rem;
+  color: rgba(167, 243, 208, 0.95);
+}
+
+.pm-pc-footnote {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.pm-pc-footnote strong {
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 700;
+}
+
+.pm-pc-footnote-code {
+  font-size: 0.68rem;
+  padding: 0.06rem 0.28rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pm-pc-pts-suffix {
+  font-weight: 700;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.pm-pc-par-good {
+  color: #6ee7b7;
+}
+.pm-pc-par-bad {
+  color: #fca5a5;
+}
+
+.pm-pc-season {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.pm-pc-season-total {
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.pm-pc-season-best {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+@media (max-width: 420px) {
+  .pm-pc-history-row {
+    grid-template-columns: minmax(0, 1fr) 34px 24px 24px 24px 32px 46px 48px;
+    font-size: 0.7rem;
+    gap: 3px;
+    padding: 7px 6px;
+  }
 }

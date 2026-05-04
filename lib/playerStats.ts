@@ -16,6 +16,62 @@ export function earnedPointsFromHistoryRow(row: any): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Arkistorivi: fantasy ilman sijoitusbonusta (sama kaava kuin archiveEarnedPointsFromPlayer ilman position_bonus).
+ */
+export function statsOnlyPointsFromHistoryRow(row: any): number {
+  const par = Number(row.player_score) || 0;
+  return (
+    (par < 0 ? Math.abs(par) * 2 : par * -1) +
+    (Number(row.player_rounds) || 0) * 2 +
+    (Number(row.hot_rounds) || 0) * 5 +
+    (Number(row.hio_count) || 0) * 20
+  );
+}
+
+/**
+ * Sijoitusbonus arkistoriviltä: `earned_points` − tilastopisteet.
+ * Arkistossa ei ole erillistä position_bonus -kenttää; tämä johtaa bonuksen tallennetusta kokonaispistemäärästä.
+ * Jos `earned_points` puuttuu, palautetaan null (ei voi päätellä luotettavasti).
+ */
+export function positionBonusFromHistoryRow(row: any): number | null {
+  const e = row?.earned_points;
+  if (e === null || e === undefined || e === '') return null;
+  const total = Number(e);
+  if (!Number.isFinite(total)) return null;
+  return total - statsOnlyPointsFromHistoryRow(row);
+}
+
+/**
+ * Johdettu fantasy-sijoitus yhdessä arkistoidussa kisassa (bucket = historySeasonBucket).
+ * Vertailu: max fantasy-pisteet per pelaajan nimi samassa bucketissa; sija = 1 + määrä pelaajia joilla enemmän pisteitä (tasapeli = sama sija).
+ */
+export function fantasyPlacementInBucket(
+  allHistory: any[],
+  bucketRow: any,
+  playerName: string
+): { rank: number; field: number } | null {
+  const nameKey = String(playerName || '').trim();
+  if (!nameKey || !bucketRow) return null;
+  const bucket = historySeasonBucket(bucketRow);
+  const inBucket = (allHistory || []).filter((r) => historySeasonBucket(r) === bucket);
+  const byName = new Map<string, number>();
+  for (const r of inBucket) {
+    const n = String(r?.player_name || '').trim();
+    if (!n) continue;
+    const pts = earnedPointsFromHistoryRow(r);
+    const prev = byName.get(n);
+    byName.set(n, prev === undefined ? pts : Math.max(prev, pts));
+  }
+  const playerPts = byName.get(nameKey);
+  if (playerPts === undefined) return null;
+  let higher = 0;
+  for (const [, pts] of byName) {
+    if (pts > playerPts) higher++;
+  }
+  return { rank: higher + 1, field: byName.size };
+}
+
 export type PlayerStatRow = {
   name: string;
   pts: number;
