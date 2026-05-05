@@ -1764,17 +1764,11 @@ export default function Home() {
                   const winner = teamTotals[0];
 
                   return (
-                    <details
-                      key={key}
-                      className="group col-span-full overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] shadow-[0_2px_12px_rgba(0,0,0,0.3)] backdrop-blur"
-                    >
-                      <summary className="cursor-pointer select-none list-none px-3 py-3 [&::-webkit-details-marker]:hidden sm:px-4 sm:py-3.5">
+                    <details key={key} className="group col-span-full pm-history-archive overflow-hidden">
+                      <summary className="pm-history-archive-summary px-3 py-2.5 sm:px-4 sm:py-3">
                         <div className="pm-row-dense">
-                          <span
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-400/35 bg-amber-500/12 text-sm leading-none"
-                            aria-hidden
-                          >
-                            🏆
+                          <span className="pm-history-archive-chevron" aria-hidden>
+                            ›
                           </span>
                           <div className="min-w-0 flex-1">
                             <h3 className="pm-name" title={heading}>
@@ -1797,54 +1791,60 @@ export default function Home() {
                         </div>
                       </summary>
 
-                      <div className="border-t border-white/10 bg-black/25 p-3 sm:p-4">
+                      <div className="pm-history-archive-body">
                         <div className="pm-grid">
                           {teamTotals.map((team, index) => (
                             <article
                               key={team.name}
                               className={[
-                                'pm-card pm-card--stack',
-                                index === 0 ? '!border-l-emerald-400 !bg-emerald-500/[0.1]' : '',
-                              ].join(' ')}
+                                'pm-history-team-card',
+                                index === 0 ? 'pm-history-team-card--winner' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' ')}
                             >
-                              <div className="pm-row-dense">
+                              <div className="pm-history-team-head">
                                 <TeamLogo
                                   logoPath={profiles.find((p: any) => p.team_name === team.name)?.team_logo_path}
                                   logoId={profiles.find((p: any) => p.team_name === team.name)?.team_logo_id}
                                   fallbackName={team.name}
                                   size="md"
                                 />
-                                <h3 className="pm-name" title={team.name}>
-                                  {team.name}
-                                </h3>
-                                <div className="pm-nums">
-                                  <span className="pm-tag pm-tag-rating">
-                                    <span className="pm-tag-label">Sija</span>
-                                    <span className="pm-tag-value">{index + 1}</span>
-                                  </span>
-                                  <span className="pm-tag pm-tag-points">
-                                    <span className="pm-tag-label pm-tag-label-points">Yhteensä</span>
-                                    <span className="pm-tag-value pm-tag-value-points">{team.total} p</span>
-                                  </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className="pm-name !m-0 !text-[0.9375rem]" title={team.name}>
+                                      {team.name}
+                                    </h3>
+                                    {index === 0 ? (
+                                      <span className="pm-history-winner-pill">Voittaja</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="pm-history-team-stats">
+                                  <div className="pm-history-team-stats-item">
+                                    <span className="pm-history-team-stats-label">Sija</span>
+                                    <span className="pm-history-team-stats-value">{index + 1}</span>
+                                  </div>
+                                  <div className="pm-history-team-stats-item">
+                                    <span className="pm-history-team-stats-label">Yhteensä</span>
+                                    <span className="pm-history-team-stats-value pm-history-team-stats-value--pts">
+                                      {team.total} p
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
-                              {index === 0 && (
-                                <div className="mt-2 inline-flex items-center rounded-md border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-emerald-100">
-                                  Voittaja
-                                </div>
-                              )}
 
-                              <div className="mt-3 space-y-1.5 border-t border-white/10 pt-2">
+                              <div className="pm-history-player-list space-y-1.5">
                                 {tournamentRows
-                                  .filter(r => r.team_name === team.name)
+                                  .filter((r) => r.team_name === team.name)
                                   .map((r, i) => {
                                     const p = Number(r.player_score) || 0;
                                     const pts = (p < 0 ? Math.abs(p) * 2 : p * -1) + (Number(r.player_rounds) * 2);
                                     const earned = r.earned_points ?? pts;
                                     return (
                                       <div
-                                        key={i}
-                                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5"
+                                        key={`${team.name}-${String(r.player_name)}-${i}`}
+                                        className="pm-roster-pick-row rounded-[10px] px-2.5 py-2"
                                       >
                                         <div className="pm-row-dense">
                                           <div className="pm-avatar pm-avatar--sm" aria-hidden>
@@ -1853,12 +1853,12 @@ export default function Home() {
                                           <span className="min-w-0 flex-1 truncate text-xs font-semibold text-white/90">
                                             {r.player_name}
                                           </span>
-                                          <div className="pm-nums">
-                                            <span className="pm-tag pm-tag-points">
-                                              <span className="pm-tag-label pm-tag-label-points">Pisteet</span>
-                                              <span className="pm-tag-value pm-tag-value-points">{earned} p</span>
-                                            </span>
-                                          </div>
+                                          <span
+                                            className="shrink-0 text-sm font-extrabold tabular-nums text-sky-200/90"
+                                            title="Fantasy-pisteet"
+                                          >
+                                            {earned} p
+                                          </span>
                                         </div>
                                       </div>
                                     );

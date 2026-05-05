@@ -565,6 +565,150 @@ body {
   padding: 10px 12px 12px;
 }
 
+/* Kisa-arkisto: avattava kisa — sama pinta ja accent kuin pm-card (ei erillistä “infografi”-laatikkoa) */
+.pm-history-archive {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid #34d399;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  min-width: 0;
+}
+.pm-history-archive-summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.pm-history-archive-summary::-webkit-details-marker {
+  display: none;
+}
+.pm-history-archive-summary:focus {
+  outline: none;
+}
+.pm-history-archive-summary:focus-visible {
+  outline: 2px solid rgba(52, 211, 153, 0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.pm-history-archive-chevron {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(52, 211, 153, 0.32);
+  background: rgba(52, 211, 153, 0.1);
+  color: rgba(167, 243, 208, 0.95);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 0.18s ease, background 0.15s ease;
+}
+.pm-history-archive[open] .pm-history-archive-chevron {
+  transform: rotate(90deg);
+  background: rgba(52, 211, 153, 0.14);
+}
+.pm-history-archive-body {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.16);
+  padding: 10px 12px 12px;
+}
+
+/* Kisa-arkisto: tiimikortti (ei pm-card -tuplareunoja) */
+.pm-history-team-card {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-left: 3px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px 14px;
+  min-width: 0;
+  box-shadow: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.pm-history-team-card--winner {
+  border-left-color: #34d399;
+  background: linear-gradient(
+    165deg,
+    rgba(52, 211, 153, 0.07) 0%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+}
+.pm-history-team-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.pm-history-team-stats {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-shrink: 0;
+  width: 100%;
+  justify-content: flex-end;
+  margin-left: 0;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 520px) {
+  .pm-history-team-stats {
+    width: auto;
+    margin-left: auto;
+    margin-top: 0;
+  }
+}
+.pm-history-team-stats-item {
+  text-align: right;
+}
+.pm-history-team-stats-label {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.2;
+}
+.pm-history-team-stats-value {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.92);
+}
+.pm-history-team-stats-value--pts {
+  color: rgba(167, 243, 208, 0.95);
+}
+.pm-history-winner-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(209, 250, 229, 0.95);
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.28);
+}
+.pm-history-player-list {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
 /* Yksi rivi: avatar | nimi | rating + hinta | osta */
 .pm-row-dense {
   display: flex;
