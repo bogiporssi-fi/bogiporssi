@@ -22,7 +22,7 @@ interface AdminPanelProps {
   /** Kaikki managerien pickit tässä turnauksessa (rosterit). */
   allTeamsPicks: any[];
   profiles: any[];
-  getPrice: (rating: number) => number;
+  getPrice: (rating: number, playerName?: string | null) => number;
   updateTournamentName: (newName: string) => void;
   updateTournamentRoundParStrokes: (value: number | null) => void | Promise<void>;
   saveAdminStats: (pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) => void;
@@ -163,7 +163,7 @@ export default function AdminPanel({
       alert('Tämä pelaaja on jo samassa joukkueessa toisena valintana.');
       return;
     }
-    const buy_price = getPrice(Number(newPl.official_rating) || 950);
+    const buy_price = getPrice(Number(newPl.official_rating) || 950, newPl.name);
     setSwapSaving(true);
     try {
       const { data: rpcId, error } = await supabase.rpc('admin_replace_pick', {
@@ -947,7 +947,7 @@ export default function AdminPanel({
                   </option>
                   {swapNewPlayerOptions.map((pl) => (
                     <option key={pl.id} value={pl.id}>
-                      {pl.name} — rating {pl.rating} — {getPrice(pl.rating).toLocaleString('fi-FI')} €
+                      {pl.name} — rating {pl.rating} — {getPrice(pl.rating, pl.name).toLocaleString('fi-FI')} €
                     </option>
                   ))}
                 </select>

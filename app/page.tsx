@@ -28,8 +28,7 @@ import {
 import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib/hofSeasonStats';
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
 import { ADMIN_EMAIL } from '../lib/adminEmail';
-
-const MIN_PLAYER_PRICE = 130_000;
+import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
 
 /** Arkistointi: fantasy-pisteet pelaajan tilastoista (sama kaava kuin pick-riveillä). */
 function archiveEarnedPointsFromPlayer(player: any): number {
@@ -43,12 +42,10 @@ function archiveEarnedPointsFromPlayer(player: any): number {
   );
 }
 
-// HINNOITTELUKAAVA: max(130 000, (Rating - 950) * 2600)
-const getPrice = (rating: number) => {
-  const diff = rating - 950;
-  const computed = diff > 0 ? diff * 2600 : 0;
-  return Math.max(MIN_PLAYER_PRICE, computed);
-};
+/** Markkinahinta: rating + valinnaiset kiinteät hinnat nimellä (ks. lib/playerPrice). */
+function getPrice(rating: number, playerName?: string | null) {
+  return getPlayerMarketPrice({ name: playerName ?? undefined, official_rating: rating });
+}
 
 function formatMoneyFi(n: number) {
   return n.toLocaleString('fi-FI').replace(/\s/g, '\u00A0');
@@ -730,7 +727,7 @@ export default function Home() {
       if (curr.buy_price !== null && curr.buy_price !== undefined && curr.buy_price !== '') {
         return acc + Math.max(MIN_PLAYER_PRICE, Number(curr.buy_price) || 0);
       }
-      return acc + getPrice(playerInfo?.official_rating || 950);
+      return acc + getPrice(playerInfo?.official_rating || 950, playerInfo?.name);
     }, 0);
   };
 
@@ -738,10 +735,12 @@ export default function Home() {
     if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
     if (draftTeam.length >= 5) return alert("Tiimi on täynnä!");
     if (draftTeam.some((pick) => pick.player_id === pId)) return;
-    const price = getPrice(rating);
-    if (calculateTeamCost(draftTeam) + price > BUDGET) return alert("Budjetti ei riitä!");
-
     const pl = players.find((p: any) => p.id === pId);
+    const price = getPlayerMarketPrice({
+      name: pl?.name,
+      official_rating: pl?.official_rating ?? rating,
+    });
+    if (calculateTeamCost(draftTeam) + price > BUDGET) return alert("Budjetti ei riitä!");
     setDraftTeam((prev) => [
       ...prev,
       {
@@ -1074,7 +1073,10 @@ export default function Home() {
     const valueByPlayer = new Map<string, { points: number; price: number }>();
     const getPlayerPriceByName = (name: string) => {
       const pl = players.find((p: any) => p.name === name);
-      return pl ? getPrice(Number(pl.official_rating) || 950) : 0;
+      return getPlayerMarketPrice({
+        name,
+        official_rating: pl ? Number(pl.official_rating) || 950 : 950,
+      });
     };
     historyForDisplay.forEach((row: any) => {
       const name = row.player_name;

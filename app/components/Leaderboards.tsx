@@ -29,7 +29,7 @@ interface LeaderboardsProps {
   viewerIsAdmin?: boolean;
   allTeamsPicks: any[];
   players: any[];
-  getPrice: (rating: number) => number;
+  getPrice: (rating: number, playerName?: string | null) => number;
   getPickPoints: (pick: any) => number;
 }
 
@@ -86,7 +86,7 @@ function TournamentPickRows({
 }: {
   picks: any[];
   players: any[];
-  getPrice: (rating: number) => number;
+  getPrice: (rating: number, playerName?: string | null) => number;
   getPickPoints: (pick: any) => number;
 }) {
   const minPrice = getPrice(950);
@@ -101,7 +101,7 @@ function TournamentPickRows({
         const price =
           pick.buy_price !== null && pick.buy_price !== undefined
             ? Math.max(minPrice, Number(pick.buy_price) || 0)
-            : getPrice(Number.isFinite(rating) ? rating : 950);
+            : getPrice(Number.isFinite(rating) ? rating : 950, pl?.name);
         const breakdown = pl ? breakdownFromPlayerRow(pl) : null;
         const storedPts = pl != null ? Number(pl.points) || 0 : null;
 

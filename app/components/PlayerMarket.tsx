@@ -15,7 +15,7 @@ interface PlayerMarketProps {
   onRemove: (playerId: string) => void;
   onSave: () => void;
   onPlayerClick?: (playerId: string) => void;
-  getPrice: (rating: number) => number;
+  getPrice: (rating: number, playerName?: string | null) => number;
   teamLogoPath?: string | null;
   teamLogoId?: string | null;
   teamDisplayName: string;
@@ -62,7 +62,7 @@ export default function PlayerMarket({
       const pl = players.find((p) => p.id === curr.player_id);
       const bp = curr.buy_price;
       if (bp != null && bp !== "") return acc + Math.max(minPrice, Number(bp) || 0);
-      return acc + getPrice(Number(pl?.official_rating) || 950);
+      return acc + getPrice(Number(pl?.official_rating) || 950, pl?.name);
     }, 0);
   }, [team, players, getPrice, minPrice]);
   const displayBudget = Number.isFinite(budget) && budget > 0 ? budget : 1_000_000;
@@ -221,7 +221,7 @@ export default function PlayerMarket({
           .sort((a, b) => b.official_rating - a.official_rating)
           .map((p) => {
             const isPicked = team.some((t) => t.player_id === p.id);
-            const price = getPrice(p.official_rating);
+            const price = getPrice(p.official_rating, p.name);
             const teamFull = team.length >= 5;
             const tooExpensive = !isPicked && price > remaining;
             const cannotBuy = isLocked || teamFull || tooExpensive;

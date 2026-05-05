@@ -10,7 +10,7 @@ interface UserTeamProps {
   team: any[];
   isLocked: boolean;
   onRemove: (id: string) => void;
-  getPrice: (rating: number) => number;
+  getPrice: (rating: number, playerName?: string | null) => number;
   teamDisplayName: string;
   teamLogoPath?: string | null;
   teamLogoId?: string | null;
@@ -72,7 +72,7 @@ export default function UserTeam({
           const buy =
             pick.buy_price !== null && pick.buy_price !== undefined
               ? Math.max(minPrice, Number(pick.buy_price) || 0)
-              : getPrice(Number.isFinite(rating) ? rating : 950);
+              : getPrice(Number.isFinite(rating) ? rating : 950, name);
 
           const pl = pick.players;
           const breakdown = pl ? breakdownFromPlayerRow(pl) : null;

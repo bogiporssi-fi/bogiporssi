@@ -15,7 +15,7 @@ type Props = {
   players: any[];
   history: any[];
   activeTournament: any;
-  getPrice: (rating: number) => number;
+  getPrice: (rating: number, playerName?: string | null) => number;
   onClose: () => void;
 };
 
@@ -125,7 +125,7 @@ export default function PlayerCard({
 
   const ratingNum = Number(player?.official_rating);
   const rating = Number.isFinite(ratingNum) ? ratingNum : null;
-  const price = rating != null ? getPrice(rating) : null;
+  const price = rating != null ? getPrice(rating, player?.name) : null;
   const playerName = player?.name || "Tuntematon pelaaja";
 
   const modal = (
