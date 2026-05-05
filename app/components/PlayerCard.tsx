@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { historySeasonBucket } from "../../lib/seasonSegment";
 import {
   buildPlayerSeasonRows,
   earnedPointsFromHistoryRow,
@@ -49,6 +48,32 @@ function parClass(par: unknown): string {
   return "";
 }
 
+/** Yksi avain per kisa: historySeasonBucket käyttää joskus vain seg:N (ei nimeä), jolloin sama turnaus voi olla sekä legacy-nimellä että segmenttirivinä → tuplarivi. */
+function formHistoryTournamentKey(row: any): string {
+  const n = String(row?.tournament_name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  if (n.length > 0) return n;
+  const id = row?.id;
+  return id != null && String(id) !== "" ? `__id:${id}` : `__anon:${String(row?.created_at || "")}`;
+}
+
+function pickRicherHistoryRow(a: any, b: any): any {
+  const pa = earnedPointsFromHistoryRow(a);
+  const pb = earnedPointsFromHistoryRow(b);
+  if (pb > pa) return b;
+  if (pa > pb) return a;
+  const ra = Number(a?.player_rounds) || 0;
+  const rb = Number(b?.player_rounds) || 0;
+  if (rb > ra) return b;
+  if (ra > rb) return a;
+  const aEarned = a?.earned_points != null && String(a.earned_points) !== "";
+  const bEarned = b?.earned_points != null && String(b.earned_points) !== "";
+  if (bEarned && !aEarned) return b;
+  return a;
+}
+
 export default function PlayerCard({
   player,
   players,
@@ -83,15 +108,14 @@ export default function PlayerCard({
 
   const formHistory = useMemo(() => {
     const raw = (history || []).filter((r) => r?.player_name === player?.name);
-    /** Sama pelaaja + sama kisa voi esiintyä useita kertoja (pickit) — pidä paras fantasy-tulos. */
-    const byBucket = new Map<string, any>();
+    /** Sama kisa voi olla sekä legacy-rivinä (bucket = nimi) että season_segment -rivinä (bucket = seg:N) — yhdistä turnauksen näyttönimen perusteella ja pidä täydellisin rivi. */
+    const byTournament = new Map<string, any>();
     for (const r of raw) {
-      const key = historySeasonBucket(r);
-      const prev = byBucket.get(key);
-      const pts = earnedPointsFromHistoryRow(r);
-      if (!prev || pts > earnedPointsFromHistoryRow(prev)) byBucket.set(key, r);
+      const key = formHistoryTournamentKey(r);
+      const prev = byTournament.get(key);
+      byTournament.set(key, prev ? pickRicherHistoryRow(prev, r) : r);
     }
-    const rows = Array.from(byBucket.values());
+    const rows = Array.from(byTournament.values());
     rows.sort((a, b) => {
       const sa = Number(a?.season_segment);
       const sb = Number(b?.season_segment);
