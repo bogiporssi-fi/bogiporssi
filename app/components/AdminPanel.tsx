@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ARCHIVE_HOT_HIO_AUX_TEAM_NAME } from '../../lib/archiveDisplay';
 import { supabase } from '../../lib/supabase';
+import { isTournamentLocked } from '../../lib/tournamentLocked';
 
 interface AdminPanelProps {
   activeTournament: any;
@@ -85,6 +86,7 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const resultsCsvRef = useRef<HTMLInputElement>(null);
   const tournamentId = activeTournament?.id;
+  const tournamentLocked = isTournamentLocked(activeTournament?.is_locked);
 
   const [swapUserId, setSwapUserId] = useState('');
   const [swapPickId, setSwapPickId] = useState('');
@@ -824,10 +826,10 @@ export default function AdminPanel({
           
           <button
             onClick={toggleTournamentLock}
-            className={["bp-tab", activeTournament?.is_locked ? "border border-zinc-200" : "border border-zinc-200"].join(" ")}
-            style={{ color: activeTournament?.is_locked ? '#16a34a' : '#dc2626' }}
+            className={["bp-tab", tournamentLocked ? "border border-zinc-200" : "border border-zinc-200"].join(" ")}
+            style={{ color: tournamentLocked ? '#16a34a' : '#dc2626' }}
           >
-            {activeTournament?.is_locked ? (
+            {tournamentLocked ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
               </svg>
@@ -836,7 +838,7 @@ export default function AdminPanel({
                 <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             )}
-            {activeTournament?.is_locked ? 'Avaa' : 'Lukitse'}
+            {tournamentLocked ? 'Avaa' : 'Lukitse'}
           </button>
         </div>
       </div>
@@ -1419,8 +1421,8 @@ export default function AdminPanel({
       <div style={styles.footer}>
         <span>{players.filter(p => p.name.toLowerCase().includes(adminSearch.toLowerCase())).length} pelaajaa</span>
         <div style={styles.statusRow}>
-          <div style={styles.statusDot(activeTournament?.is_locked)} />
-          <span>{activeTournament?.is_locked ? 'Turnaus lukittu' : 'Turnaus käynnissä'}</span>
+          <div style={styles.statusDot(tournamentLocked)} />
+          <span>{tournamentLocked ? 'Turnaus lukittu' : 'Turnaus käynnissä'}</span>
         </div>
       </div>
     </section>

@@ -28,6 +28,7 @@ import {
 import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib/hofSeasonStats';
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
 import { ADMIN_EMAIL } from '../lib/adminEmail';
+import { isTournamentLocked } from '../lib/tournamentLocked';
 import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
 
 /** Arkistointi: fantasy-pisteet pelaajan tilastoista (sama kaava kuin pick-riveillä). */
@@ -137,6 +138,7 @@ export default function Home() {
   const draftHydratedKeyRef = useRef<string | null>(null);
 
   const BUDGET = 1000000;
+  const tournamentLocked = isTournamentLocked(activeTournament?.is_locked);
 
   // --- KIRJAUTUMISEN SEURANTA ---
   useEffect(() => {
@@ -625,7 +627,7 @@ export default function Home() {
 
   async function toggleTournamentLock() {
     if (!activeTournament) return;
-    await supabase.from('tournaments').update({ is_locked: !activeTournament.is_locked }).eq('id', activeTournament.id);
+    await supabase.from('tournaments').update({ is_locked: !tournamentLocked }).eq('id', activeTournament.id);
     loadData();
   }
 
@@ -732,7 +734,7 @@ export default function Home() {
   };
 
   function selectDraftPlayer(pId: string, rating: number) {
-    if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
+    if (tournamentLocked) return alert("Turnaus on lukittu!");
     if (draftTeam.length >= 5) return alert("Tiimi on täynnä!");
     if (draftTeam.some((pick) => pick.player_id === pId)) return;
     const pl = players.find((p: any) => p.id === pId);
@@ -756,12 +758,12 @@ export default function Home() {
   }
 
   function removeDraftPlayer(pId: string) {
-    if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
+    if (tournamentLocked) return alert("Turnaus on lukittu!");
     setDraftTeam((prev) => prev.filter((pick) => pick.player_id !== pId));
   }
 
   async function saveDraftTeam() {
-    if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
+    if (tournamentLocked) return alert("Turnaus on lukittu!");
     if (!activeTournament?.id) return alert("Aktiivista turnausta ei löytynyt.");
     if (!user?.id) return alert("Kirjaudu sisään tallentaaksesi joukkueen.");
     if (draftTeam.length !== 5) return alert("Valitse täsmälleen 5 pelaajaa ennen tallennusta.");
@@ -794,7 +796,7 @@ export default function Home() {
   }
 
   async function removePlayer(pId: string) {
-    if (activeTournament?.is_locked) return alert("Turnaus on lukittu!");
+    if (tournamentLocked) return alert("Turnaus on lukittu!");
     // Poistetaan vain aktiivisen turnauksen pick (jos turnaus löytyy)
     const q = supabase.from('picks').delete().eq('player_id', pId).eq('user_id', user.id);
     if (activeTournament?.id) await q.eq('tournament_id', activeTournament.id);
@@ -1010,7 +1012,7 @@ export default function Home() {
 
   const hallOfFameItems = (() => {
     const fallback = 'Ei dataa vielä';
-    const revealMostPopular = Boolean(activeTournament?.is_locked);
+    const revealMostPopular = tournamentLocked;
     const hofBucketLabels = buildHistoryBucketLabels(historyForDisplay, activeTournament);
     const hofCurrentBucket = currentSeasonBucket(activeTournament);
 
@@ -1365,7 +1367,7 @@ export default function Home() {
                 <h1 className="bp-header-title truncate">
                   {activeTournament?.name || 'Ei aktiivista turnasta'}
                 </h1>
-                {activeTournament?.is_locked && (
+                {tournamentLocked && (
                   <span className="bp-locked-badge bp-locked-badge--header shrink-0">
                     Lukittu
                   </span>
@@ -1430,7 +1432,7 @@ export default function Home() {
         >
           Historiikki
         </button>
-        {user.email === ADMIN_EMAIL && (
+        {user.email?.toLowerCase() === ADMIN_EMAIL && (
           <button
             onClick={() => setMainTab('admin')}
             className={["bp-tab", mainTab === 'admin' ? "bp-tab-active" : ""].join(" ")}
@@ -1440,7 +1442,7 @@ export default function Home() {
         )}
       </nav>
 
-      {user.email === ADMIN_EMAIL && mainTab === 'admin' && (
+      {user.email?.toLowerCase() === ADMIN_EMAIL && mainTab === 'admin' && (
         <AdminPanel 
           activeTournament={activeTournament}
           updateTournamentName={updateTournamentName}
@@ -1471,7 +1473,7 @@ export default function Home() {
           team={draftTeam}
           savedTeam={team}
           budget={BUDGET}
-          isLocked={activeTournament?.is_locked}
+          isLocked={tournamentLocked}
           onSelect={selectDraftPlayer}
           onRemove={removeDraftPlayer}
           onSave={saveDraftTeam}
@@ -1595,7 +1597,7 @@ export default function Home() {
 
           <UserTeam
             team={team}
-            isLocked={activeTournament?.is_locked}
+            isLocked={tournamentLocked}
             onRemove={removePlayer}
             getPrice={getPrice}
             teamDisplayName={teamDisplayName}
@@ -1616,9 +1618,9 @@ export default function Home() {
             playerSeasonRows={playerSeasonRows}
             activeBoard={leaderboardTab === 'tournament' ? tournamentBoard : seasonBoard}
             profiles={profiles}
-            isLocked={!!activeTournament?.is_locked}
+            isLocked={tournamentLocked}
             viewerUserId={user.id}
-            viewerIsAdmin={user.email === ADMIN_EMAIL}
+            viewerIsAdmin={user.email?.toLowerCase() === ADMIN_EMAIL}
             allTeamsPicks={picksForActiveTournament}
             players={players}
             getPrice={getPrice}

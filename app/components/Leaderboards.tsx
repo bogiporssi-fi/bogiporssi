@@ -46,6 +46,7 @@ function initials(name: string) {
 
 function resolveEntryUid(entry: BoardEntry, tab: "tournament" | "season", profiles: any[]): string | undefined {
   if (tab === "tournament") return entry.uid;
+  if (entry.uid) return entry.uid;
   const n = entry.name;
   if (!n) return undefined;
   return profiles.find((p: any) => p.team_name === n)?.id;
@@ -307,8 +308,12 @@ export default function Leaderboards({
   const canSeeRoster = (entry: BoardEntry) => {
     if (viewerIsAdmin) return true;
     if (isLocked) return true;
+    const vid = viewerUserId != null ? String(viewerUserId) : '';
+    if (!vid) return false;
     const uid = resolveEntryUid(entry, tab, profiles);
-    return String(uid ?? '') === String(viewerUserId ?? '');
+    const eid = uid != null ? String(uid) : '';
+    if (!eid) return false;
+    return eid === vid;
   };
 
   return (
