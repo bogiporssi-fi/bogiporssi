@@ -498,16 +498,17 @@ export default function Home() {
     setActiveTournament({ ...activeTournament, name: newName });
   }
 
-  async function updateTournamentRoundParStrokes(value: number | null) {
+  async function updateTournamentRoundParStrokes(payload: {
+    round_par_strokes: number | null;
+    round_par_strokes_per_round: number[] | null;
+  }) {
     if (!activeTournament?.id) return;
-    const payload =
-      value != null && Number.isFinite(value) && value > 0 ? { round_par_strokes: Math.round(value) } : { round_par_strokes: null };
     const { error } = await supabase.from('tournaments').update(payload).eq('id', activeTournament.id);
     if (error) {
       alert('Kierroksen par -tallennus epäonnistui: ' + formatSupabaseErr(error));
       return;
     }
-    setActiveTournament({ ...activeTournament, round_par_strokes: payload.round_par_strokes });
+    setActiveTournament({ ...activeTournament, ...payload });
   }
 
   async function handleRatingImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -587,8 +588,15 @@ export default function Home() {
     const rps = activeTournament?.round_par_strokes;
     const roundParStrokes =
       rps != null && Number.isFinite(Number(rps)) && Number(rps) > 0 ? Number(rps) : null;
+    const prRaw = activeTournament?.round_par_strokes_per_round;
+    let roundParStrokesPerRound: number[] | null = null;
+    if (Array.isArray(prRaw) && prRaw.length > 0) {
+      const mapped = prRaw.map((x: unknown) => Math.round(Number(x))).filter((n) => Number.isFinite(n) && n > 0);
+      if (mapped.length > 0) roundParStrokesPerRound = mapped;
+    }
     const { updates, unknownNames, parseWarnings, decodingUsed } = decodeAndParseResultsCsv(buf, active, {
       roundParStrokes,
+      roundParStrokesPerRound,
     });
     if (parseWarnings.length > 0) {
       alert(parseWarnings.join('\n'));

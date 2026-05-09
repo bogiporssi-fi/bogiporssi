@@ -29,8 +29,10 @@ export type ParseResultsCsvOutcome = {
 };
 
 export type ParseResultsCsvOptions = {
-  /** Kierroksen tavoiteheitot (turnauksen asetus); rd_*-sarakkeisiin pakollinen */
+  /** Yksi tavoiteheittojen määrä kaikille rd_*-kierroksille (kun perRound ei käytössä) */
   roundParStrokes: number | null;
+  /** rd_n käyttää indeksiä n−1 (esim. [54,54,58] → rd_1−54, rd_2−54, rd_3−58). Tyhjä/null → vain roundParStrokes */
+  roundParStrokesPerRound: number[] | null;
 };
 
 const HEADER_ALIASES: Record<string, ColumnKey> = {
@@ -279,14 +281,14 @@ function parseKRoundColumnMaps(headerCells: string[]): {
 
 /**
  * Ensimmäinen rivi = otsikot. Tuonti ylikirjoittaa samat kentät kuin rivin Tallenna-nappi.
- * rd_* + roundParStrokes → heitot muunnetaan par-eroiksi. k1_par → suora par-ero.
+ * rd_* + roundParStrokesPerRound tai roundParStrokes → heitot muunnetaan par-eroiksi. k1_par → suora par-ero.
  */
 export function parseResultsCsv(
   text: string,
   activePlayers: ActivePlayer[],
-  options: ParseResultsCsvOptions = { roundParStrokes: null }
+  options: ParseResultsCsvOptions = { roundParStrokes: null, roundParStrokesPerRound: null }
 ): ParseResultsCsvOutcome {
-  const { roundParStrokes } = options;
+  const { roundParStrokes, roundParStrokesPerRound } = options;
   const parseWarnings: string[] = [];
   const unknownNames: string[] = [];
   const updates: ParsedStatUpdate[] = [];
@@ -322,13 +324,30 @@ export function parseResultsCsv(
   const kRound = rdMaps ? null : parseKRoundColumnMaps(headerCells);
 
   if (rdMaps) {
-    if (
+    const maxRd = Math.max(...rdMaps.roundNumbers);
+    const perRound =
+      roundParStrokesPerRound && roundParStrokesPerRound.length > 0 ? roundParStrokesPerRound : null;
+    if (perRound) {
+      if (perRound.length < maxRd) {
+        parseWarnings.push(
+          `CSV:ssä on rd_1…rd_${maxRd} — anna Adminissa vähintään ${maxRd} par-lukua (pilkuilla erotettu listassa). Listassa on nyt ${perRound.length} lukua.`
+        );
+        return { updates, unknownNames, parseWarnings };
+      }
+      for (let i = 0; i < perRound.length; i++) {
+        const v = perRound[i];
+        if (!Number.isFinite(v) || v <= 0 || v > 200) {
+          parseWarnings.push(`Par-listan ${i + 1}. luku on virheellinen (käytä kokonaislukuja 1–200).`);
+          return { updates, unknownNames, parseWarnings };
+        }
+      }
+    } else if (
       roundParStrokes == null ||
       !Number.isFinite(roundParStrokes) ||
       roundParStrokes <= 0
     ) {
       parseWarnings.push(
-        'CSV:ssä on rd_*-sarakkeet (heitot): aseta Adminissa "Kierroksen par (heitot)" positiiviseksi luvuksi (esim. 54) ennen tuontia.'
+        'CSV:ssä on rd_*-sarakkeet (heitot): aseta Adminissa yksi par-luku tai pilkuilla erotettu lista (esim. 54 tai 54,54,58) ja tallenna ennen tuontia.'
       );
       return { updates, unknownNames, parseWarnings };
     }
@@ -374,7 +393,12 @@ export function parseResultsCsv(
 
     let roundBreakdown: RoundBreakdownStored | null = null;
 
-    if (rdMaps && roundParStrokes != null && roundParStrokes > 0) {
+    const perRoundActive =
+      rdMaps && roundParStrokesPerRound && roundParStrokesPerRound.length > 0;
+    const legacyRdOk =
+      rdMaps && !perRoundActive && roundParStrokes != null && roundParStrokes > 0;
+
+    if (rdMaps && (perRoundActive || legacyRdOk)) {
       const rb: RoundBreakdownStored = [];
       for (const n of rdMaps.roundNumbers) {
         const ri = rdMaps.roundRdIndex.get(n);
@@ -382,7 +406,10 @@ export function parseResultsCsv(
         const rdCell = cells[ri] ?? "";
         const strokes = parseIntCellOrNull(rdCell);
         if (strokes == null) continue;
-        const parDelta = strokes - roundParStrokes;
+        const targetPar = perRoundActive
+          ? roundParStrokesPerRound![n - 1]
+          : roundParStrokes!;
+        const parDelta = strokes - targetPar;
 
         const hi = rdMaps.roundHotIndex.get(n);
         const ho = rdMaps.roundHioIndex.get(n);
@@ -469,7 +496,7 @@ type TextEncoding = "utf-8" | "windows-1252" | "iso-8859-1";
 export function decodeAndParseResultsCsv(
   buf: ArrayBuffer,
   activePlayers: ActivePlayer[],
-  options: ParseResultsCsvOptions = { roundParStrokes: null }
+  options: ParseResultsCsvOptions = { roundParStrokes: null, roundParStrokesPerRound: null }
 ): ParseResultsCsvOutcome & { decodingUsed: TextEncoding } {
   const encodings: TextEncoding[] = ["utf-8", "windows-1252", "iso-8859-1"];
   let best: ParseResultsCsvOutcome | null = null;

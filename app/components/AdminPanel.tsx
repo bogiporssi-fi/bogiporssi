@@ -25,7 +25,10 @@ interface AdminPanelProps {
   profiles: any[];
   getPrice: (rating: number, playerName?: string | null) => number;
   updateTournamentName: (newName: string) => void;
-  updateTournamentRoundParStrokes: (value: number | null) => void | Promise<void>;
+  updateTournamentRoundParStrokes: (payload: {
+    round_par_strokes: number | null;
+    round_par_strokes_per_round: number[] | null;
+  }) => void | Promise<void>;
   saveAdminStats: (pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) => void;
 }
 
@@ -210,9 +213,19 @@ export default function AdminPanel({
 
   useEffect(() => {
     if (roundParDirty) return;
+    const list = activeTournament?.round_par_strokes_per_round;
+    if (Array.isArray(list) && list.length > 0) {
+      setRoundParDraft(
+        list
+          .map((x: unknown) => Math.round(Number(x)))
+          .filter((n) => Number.isFinite(n))
+          .join(', ')
+      );
+      return;
+    }
     const v = activeTournament?.round_par_strokes;
     setRoundParDraft(v != null && Number(v) > 0 ? String(Math.round(Number(v))) : '');
-  }, [tournamentId, activeTournament?.round_par_strokes, roundParDirty]);
+  }, [tournamentId, activeTournament?.round_par_strokes, activeTournament?.round_par_strokes_per_round, roundParDirty]);
 
   useEffect(() => {
     if (!roundParMessage) return;
@@ -388,22 +401,36 @@ export default function AdminPanel({
     if (raw === '') {
       setRoundParSaving(true);
       try {
-        await updateTournamentRoundParStrokes(null);
+        await updateTournamentRoundParStrokes({
+          round_par_strokes: null,
+          round_par_strokes_per_round: null,
+        });
         setRoundParDirty(false);
-        setRoundParMessage('Tallennettu: ei kierroksen par-lukua (rd-*-CSV vaatii luvun).');
+        setRoundParMessage('Tallennettu: ei par-asetusta (rd_*-CSV vaatii luvun tai listan).');
       } finally {
         setRoundParSaving(false);
       }
       return;
     }
-    const n = parseInt(raw, 10);
-    if (!Number.isFinite(n) || n <= 0 || n > 200) {
-      setRoundParMessage('Anna kokonaisluku 1–200 tai jätä tyhjäksi.');
+    const parts = raw.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    const nums = parts.map((p) => parseInt(p, 10));
+    if (nums.length === 0 || nums.some((n) => !Number.isFinite(n) || n <= 0 || n > 200)) {
+      setRoundParMessage('Anna yksi tai useampi kokonaisluku 1–200 (pilkuilla tai puolipisteillä erotettuna), tai tyhjä.');
       return;
     }
     setRoundParSaving(true);
     try {
-      await updateTournamentRoundParStrokes(n);
+      if (nums.length === 1) {
+        await updateTournamentRoundParStrokes({
+          round_par_strokes: nums[0],
+          round_par_strokes_per_round: null,
+        });
+      } else {
+        await updateTournamentRoundParStrokes({
+          round_par_strokes: null,
+          round_par_strokes_per_round: nums,
+        });
+      }
       setRoundParDirty(false);
       setRoundParMessage('Tallennettu.');
     } finally {
@@ -989,24 +1016,30 @@ export default function AdminPanel({
           <label style={styles.label}>Kierroksen par (heitot)</label>
         </div>
         <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
-          Sama luku kaikille kierroksille tässä kisassa (esim. 54). CSV:n <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1</span>,{' '}
-          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_2</span>… -sarakkeiden heitot vähennetään tästä → par-ero fantasy-laskentaan.{' '}
-          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Tallenna</strong> kun olet valmis — arvo ei muutu tietokantaan ennen sitä.
+          CSV:n <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1</span>,{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_2</span>,{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_3</span>… -sarakkeiden{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>kokonaisheitot</strong> vähennetään tästä → par-ero.{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Yksi luku</strong> (esim. <span style={{ fontFamily: 'ui-monospace, monospace' }}>54</span>) = sama kaikille kierroksille.{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Lista</strong> pilkuilla tai puolipisteillä (esim.{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>54, 54, 58</span>) = ensimmäinen luku{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_1</span>:lle, toinen <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_2</span>:lle, jne. Listassa oltava vähintään yhtä monta lukua kuin CSV:ssä on{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_*</span>-sarakkeita (tyypillisesti 3–5).{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Tallenna</strong> ennen tulostuontia.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
           <input
-            type="number"
-            min={1}
-            max={200}
+            type="text"
+            inputMode="decimal"
             value={roundParDraft}
             onChange={(e) => {
               setRoundParDraft(e.target.value);
               setRoundParDirty(true);
             }}
-            placeholder="esim. 54"
+            placeholder="54  tai  54, 54, 58"
             className="bp-input"
-            style={{ maxWidth: '140px' }}
-            aria-label="Kierroksen par heittoina"
+            style={{ maxWidth: 'min(100%, 280px)' }}
+            aria-label="Par heittoina: yksi luku tai pilkuilla erotettu lista"
           />
           <button
             type="button"
@@ -1018,7 +1051,7 @@ export default function AdminPanel({
             {roundParSaving ? 'Tallennetaan…' : 'Tallenna kierroksen par'}
           </button>
           <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
-            Tyhjä + tallenna = ei asetettu (rd-*-tuonti vaatii luvun).
+            Tyhjä + tallenna = ei asetettua paria (rd_*-tuonti vaatii yhden luvun tai listan).
           </span>
         </div>
         {roundParMessage ? (
@@ -1257,7 +1290,9 @@ export default function AdminPanel({
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>rd_1;rd_2;rd_3</span>
           (voit lisätä <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_4</span>, <span style={{ fontFamily: 'ui-monospace, monospace' }}>rd_5</span>…) + valinnainen{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace' }}>hot_round_1;hio_1;…</span>. Aseta yläpuolelle{' '}
-          <strong>Kierroksen par (heitot)</strong> ja <strong>Tallenna kierroksen par</strong> ennen tuontia — par-ero = heitot − tuo luku.
+          <strong>Kierroksen par (heitot)</strong> — yksi luku tai lista (
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>54</span> tai{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace' }}>54,54,58</span>) — ja <strong>Tallenna kierroksen par</strong> ennen tuontia: par-ero = heitot − kyseisen kierroksen par-luku.
           <br />
           Vaihtoehto: suora par-ero kierroksittain:{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>k1_par;k1_hot;k1_hio;…</span>
