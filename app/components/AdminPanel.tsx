@@ -747,6 +747,18 @@ export default function AdminPanel({
       color: 'rgba(255,255,255,0.92)',
       outline: 'none',
     },
+    pdgaInput: {
+      height: '32px',
+      width: '76px',
+      borderRadius: '8px',
+      border: '1px solid rgba(255,255,255,0.10)',
+      background: 'rgba(255,255,255,0.03)',
+      textAlign: 'center' as const,
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: 'rgba(255,255,255,0.92)',
+      outline: 'none',
+    },
     bonusGroup: {
       display: 'flex',
       flexWrap: 'wrap' as const,
@@ -889,6 +901,11 @@ export default function AdminPanel({
         <p style={{ margin: '0 0 8px' }}>
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Uusi kisa</strong> arkistoi tämän kisan valinnat ja pisteet historiaan, nollaa kenttäpelaajien tilastot, poistaa tämän turnauksen pick-rivit ja avaa seuraavan osion (
           <span style={{ fontFamily: 'ui-monospace, monospace' }}>season_segment</span> +1). Tyhjä rosteri = tämä polku.
+        </p>
+        <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Rating CSV</strong> — rivit{' '}
+          <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>nimi;PDGA;rating</span>
+          (toinen sarake voi olla tyhjä: PDGA-kenttää ei silloin päivitetä). Kolmas sarake on rating kuten ennen.
         </p>
         <p
           style={{
@@ -1348,6 +1365,9 @@ export default function AdminPanel({
             <thead style={styles.thead}>
               <tr>
                 <th style={styles.th}>Pelaaja</th>
+                <th style={styles.thCenter} title="PDGA player number">
+                  PDGA
+                </th>
                 <th style={styles.th}>Tulos</th>
                 <th style={styles.thCenter}>Krs</th>
                 <th style={styles.th}>Bonukset</th>
@@ -1356,7 +1376,7 @@ export default function AdminPanel({
             </thead>
             <tbody>
               {players.filter(p => p.name.toLowerCase().includes(adminSearch.toLowerCase())).sort((a,b) => a.name.localeCompare(b.name)).map(p => (
-                <tr key={`${p.id}-${p.par_score}-${p.rounds_played}`} style={styles.tr}>
+                <tr key={`${p.id}-${p.par_score}-${p.rounds_played}-${p.pdga_number ?? ''}`} style={styles.tr}>
                   <td style={styles.td}>
                     <div style={styles.playerCell}>
                       <div style={styles.avatar}>
@@ -1367,6 +1387,17 @@ export default function AdminPanel({
                         <span style={styles.ratingBadge}>{p.official_rating}</span>
                       </div>
                     </div>
+                  </td>
+                  <td style={styles.tdCenter}>
+                    <input
+                      id={`pdga-${p.id}`}
+                      defaultValue={p.pdga_number != null ? String(p.pdga_number) : ''}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="—"
+                      title="PDGA-numero"
+                      style={styles.pdgaInput}
+                    />
                   </td>
                   <td style={styles.td}>
                     <div style={styles.scoreGroup}>

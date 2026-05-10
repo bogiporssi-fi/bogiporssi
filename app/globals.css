@@ -785,6 +785,43 @@ body {
   gap: 4px;
 }
 
+.pm-pdga-link {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(125, 211, 252, 0.95);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pm-pdga-link:hover {
+  color: #e0f2fe;
+}
+
+.pm-pdga-link--chip {
+  margin-left: 4px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.pm-pc-pdga-row {
+  margin: 6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.pm-pc-pdga-hint {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+}
+
 .pm-tag {
   display: inline-flex;
   flex-direction: column;

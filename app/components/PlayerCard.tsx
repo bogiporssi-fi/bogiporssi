@@ -8,6 +8,7 @@ import {
   fantasyPlacementInBucket,
   positionBonusFromHistoryRow,
 } from "../../lib/playerStats";
+import { pdgaPlayerUrl } from "../../lib/pdga";
 
 type Props = {
   player: any;
@@ -151,6 +152,8 @@ export default function PlayerCard({
   const rating = Number.isFinite(ratingNum) ? ratingNum : null;
   const price = rating != null ? getPrice(rating, player?.name) : null;
   const playerName = player?.name || "Tuntematon pelaaja";
+  const pdgaNRaw = Number(player?.pdga_number);
+  const pdgaN = Number.isFinite(pdgaNRaw) && pdgaNRaw > 0 ? Math.round(pdgaNRaw) : null;
 
   const modal = (
     <div
@@ -186,6 +189,19 @@ export default function PlayerCard({
                   </span>
                 </span>
               </div>
+              {pdgaN != null && (
+                <p className="pm-pc-pdga-row">
+                  <a
+                    href={pdgaPlayerUrl(pdgaN)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="pm-pdga-link"
+                  >
+                    PDGA-profiili
+                  </a>
+                  <span className="pm-pc-pdga-hint">ulkoinen</span>
+                </p>
+              )}
             </div>
           </div>
           <button

@@ -30,6 +30,7 @@ import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerS
 import { ADMIN_EMAIL } from '../lib/adminEmail';
 import { isTournamentLocked } from '../lib/tournamentLocked';
 import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
+import { parsePdgaCsvMiddleColumn, parsePdgaNumberInput } from '../lib/pdga';
 
 /** Arkistointi: fantasy-pisteet pelaajan tilastoista (sama kaava kuin pick-riveillä). */
 function archiveEarnedPointsFromPlayer(player: any): number {
@@ -523,11 +524,23 @@ export default function Home() {
         if (!row.trim()) continue;
         const columns = row.includes(';') ? row.split(';') : row.split(',');
         const name = columns[0]?.trim();
-        const newRat = parseInt(columns[2]?.trim());
+        const newRat = parseInt(columns[2]?.trim(), 10);
+        const pdgaFromCsv = parsePdgaCsvMiddleColumn(columns[1]);
         if (name && !isNaN(newRat)) {
-          const { data } = await supabase.from('players').update({ official_rating: newRat, is_active: true }).ilike('name', name).select();
+          const updatePayload: Record<string, unknown> = { official_rating: newRat, is_active: true };
+          if (pdgaFromCsv !== undefined) updatePayload.pdga_number = pdgaFromCsv;
+          const { data } = await supabase.from('players').update(updatePayload).ilike('name', name).select();
           if (!data || data.length === 0) {
-            await supabase.from('players').insert([{ name, official_rating: newRat, is_active: true, points: 0, par_score: 0 }]);
+            await supabase.from('players').insert([
+              {
+                name,
+                official_rating: newRat,
+                is_active: true,
+                points: 0,
+                par_score: 0,
+                pdga_number: pdgaFromCsv === undefined ? null : pdgaFromCsv,
+              },
+            ]);
           }
         }
       }
@@ -545,7 +558,11 @@ export default function Home() {
     hio: number,
     pos: number,
     newRat: number,
-    options?: { skipLoadData?: boolean; roundBreakdown?: RoundBreakdownStored | null }
+    options?: {
+      skipLoadData?: boolean;
+      roundBreakdown?: RoundBreakdownStored | null;
+      pdga_number?: number | null;
+    }
   ): Promise<{ ok: boolean; message?: string }> {
     const scorePoints = par < 0 ? Math.abs(par) * 2 : par * -1;
     const finalPoints = scorePoints + rounds * 2 + hot * 5 + hio * 20 + pos;
@@ -560,6 +577,9 @@ export default function Home() {
     };
     if (options?.roundBreakdown !== undefined) {
       payload.round_breakdown = options.roundBreakdown;
+    }
+    if (options?.pdga_number !== undefined) {
+      payload.pdga_number = options.pdga_number;
     }
     const { error: e1 } = await supabase.from('players').update(payload).eq('id', pId);
     if (e1) return { ok: false, message: formatSupabaseErr(e1) };
@@ -576,7 +596,15 @@ export default function Home() {
   }
 
   async function saveAdminStats(pId: string, par: number, rounds: number, hot: number, hio: number, pos: number, newRat: number) {
-    const r = await persistPlayerStats(pId, par, rounds, hot, hio, pos, newRat, { roundBreakdown: null });
+    const pdgaEl =
+      typeof document !== 'undefined'
+        ? (document.getElementById(`pdga-${pId}`) as HTMLInputElement | null)
+        : null;
+    const pdgaNum = parsePdgaNumberInput(pdgaEl?.value ?? '');
+    const r = await persistPlayerStats(pId, par, rounds, hot, hio, pos, newRat, {
+      roundBreakdown: null,
+      pdga_number: pdgaNum,
+    });
     if (!r.ok) {
       alert('Tallennus epäonnistui: ' + (r.message || 'tuntematon virhe'));
     }

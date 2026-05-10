@@ -2,6 +2,7 @@
 import React, { useMemo } from "react";
 import TeamLogo from "./TeamLogo";
 import { parseTeamLogoId } from "../../lib/teamLogos";
+import { pdgaPlayerUrl } from "../../lib/pdga";
 
 interface PlayerMarketProps {
   players: any[];
@@ -31,6 +32,11 @@ function initials(name: string) {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function pdgaNumFromPlayer(raw: unknown): number | null {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
 export default function PlayerMarket({
@@ -148,6 +154,7 @@ export default function PlayerMarket({
                 rawRating !== null && rawRating !== undefined && rawRating !== ""
                   ? Number(rawRating)
                   : null;
+              const pdgaDraft = pdgaNumFromPlayer(pick.players?.pdga_number);
               return (
                 <div key={pick.player_id} className="pm-market-draft-chip">
                   <div className="pm-market-draft-chip-main">
@@ -157,6 +164,17 @@ export default function PlayerMarket({
                     <span className="pm-market-draft-chip-name" title={name}>
                       {name}
                     </span>
+                    {pdgaDraft != null && (
+                      <a
+                        href={pdgaPlayerUrl(pdgaDraft)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="pm-pdga-link pm-pdga-link--chip"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        PDGA
+                      </a>
+                    )}
                   </div>
                   <div className="pm-market-draft-chip-meta">
                     <span className="pm-market-draft-meta-pill">
@@ -225,6 +243,7 @@ export default function PlayerMarket({
             const teamFull = team.length >= 5;
             const tooExpensive = !isPicked && price > remaining;
             const cannotBuy = isLocked || teamFull || tooExpensive;
+            const pdgaN = pdgaNumFromPlayer(p.pdga_number);
             return (
               <article key={p.id} className="pm-card">
                 <div className={["pm-row-dense", isPicked ? "pm-row-dense--team" : ""].filter(Boolean).join(" ")}>
@@ -266,6 +285,18 @@ export default function PlayerMarket({
                       </span>
                     </span>
                   </div>
+                  {pdgaN != null && (
+                    <a
+                      href={pdgaPlayerUrl(pdgaN)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="pm-pdga-link"
+                      title="PDGA-profiili (ulkoinen)"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      PDGA
+                    </a>
+                  )}
                   {isPicked ? (
                     <div className="pm-row-dense-tail shrink-0">
                       <span className="pm-picked-pill">
