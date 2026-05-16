@@ -135,7 +135,7 @@ export default function Home() {
   const [teamLogoPath, setTeamLogoPath] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const teamLogoFileRef = useRef<HTMLInputElement>(null);
-  /** `${userId}:${tournamentId}` — uusi turnaus nollaa luonnoksen; sama avain sallii allekirjoitusvertailun tallentamattomalle luonnokselle. */
+  /** `${userId}:${tournamentId}:${season_segment}` — uusi kisa (segment++) nollaa luonnoksen; sama avain sallii allekirjoitusvertailun tallentamattomalle luonnokselle. */
   const draftHydratedKeyRef = useRef<string | null>(null);
 
   const BUDGET = 1000000;
@@ -254,7 +254,11 @@ export default function Home() {
         setTeam(myTeam);
         const tournamentKey =
           t?.id != null && String(t.id) !== '' ? String(t.id) : 'none';
-        const draftKey = `${myId}:${tournamentKey}`;
+        const segment =
+          t?.season_segment != null && Number.isFinite(Number(t.season_segment))
+            ? Number(t.season_segment)
+            : 0;
+        const draftKey = `${myId}:${tournamentKey}:${segment}`;
         // Uusi avain (esim. uusi kisa / ensimmäinen haku): luonnos = DB. Sama avain: säilytetään tallentamaton luonnos.
         if (draftHydratedKeyRef.current !== draftKey) {
           draftHydratedKeyRef.current = draftKey;
@@ -487,6 +491,9 @@ export default function Home() {
       }
 
       alert(`Kisa "${kisanNimi}" arkistoitu onnistuneesti!`);
+      draftHydratedKeyRef.current = null;
+      setDraftTeam([]);
+      setTeam([]);
       loadData();
     } catch (e) {
       alert('Uuden kisan aloitus epäonnistui: ' + formatSupabaseErr(e));
