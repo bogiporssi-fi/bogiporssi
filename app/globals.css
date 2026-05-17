@@ -737,6 +737,16 @@ body {
     flex: 1 1 100%;
     justify-content: space-between;
   }
+  /* Pelaajatori: nimi saa kaksi riviä ilman PDGA-linkkiä */
+  .pm-row-dense .pm-name,
+  .pm-name-btn .pm-name {
+    white-space: normal;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
 }
 
 .pm-avatar {
