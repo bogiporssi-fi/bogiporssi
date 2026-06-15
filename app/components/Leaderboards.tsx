@@ -64,7 +64,7 @@ function SeasonTeamTournamentBreakdown({ lines }: { lines: SeasonTournamentLine[
         <li key={line.bucket} className={line.dropped ? "opacity-60" : undefined}>
           <span className={line.dropped ? "line-through text-white/55" : "text-white/85"}>
             {line.tournamentName}
-            {line.missed ? " (ei mukana)" : ""}
+            {line.inProgress ? " (käynnissä)" : line.missed ? " (ei mukana)" : ""}
           </span>
           <span className="mx-1 font-semibold text-white/45">·</span>
           <span className="font-extrabold tabular-nums text-sky-200/90">
@@ -72,11 +72,11 @@ function SeasonTeamTournamentBreakdown({ lines }: { lines: SeasonTournamentLine[
             {line.winBonus > 0 ? (
               <span className="text-amber-200/90"> + {line.winBonus} voitto</span>
             ) : null}
-            {!line.dropped && line.winBonus > 0 ? (
+            {!line.dropped && !line.inProgress && line.winBonus > 0 ? (
               <span className="text-white/55"> = {line.total} p</span>
-            ) : !line.dropped ? null : (
+            ) : !line.dropped && !line.inProgress ? null : line.dropped ? (
               <span className="text-white/45"> (yht. {line.total} p)</span>
-            )}
+            ) : null}
           </span>
           {line.dropped && line.retainedWinBonus ? (
             <span className="ml-1 text-[11px] font-semibold text-amber-200/85">

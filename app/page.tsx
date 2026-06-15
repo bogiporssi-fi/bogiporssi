@@ -1736,6 +1736,11 @@ export default function Home() {
                       Tulostaulukossa näkyy sekä pudotuksin laskettu kausi että kaikkien kisojen summa.
                     </li>
                     <li>
+                      <span className="font-extrabold text-white/90">Käynnissä oleva kisa</span> näkyy kausipisteissä
+                      reaaliajassa, mutta ei koskaan pudotu. Voittobonus (+10 p) tulee vasta kun kisa on päättynyt ja
+                      arkistoitu.
+                    </li>
+                    <li>
                       <span className="font-extrabold text-white/90">Kisavoittaja:</span> fantasy-kisan voittaja saa
                       +10 pistettä kausipisteisiin. Bonus säilyy vaikka kyseinen kisa jäisi pudotettuihin.
                     </li>

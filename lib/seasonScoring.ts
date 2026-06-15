@@ -13,6 +13,8 @@ export type SeasonTournamentLine = {
   missed: boolean;
   dropped: boolean;
   retainedWinBonus: boolean;
+  /** Aktiivinen kisa — ei pudotu eikä saa voittobonusta ennen arkistointia. */
+  inProgress?: boolean;
 };
 
 export type SeasonScoreResult = {
@@ -61,14 +63,16 @@ export function scoreTeamSeasonFromTournaments(
   pointsByBucket: Map<string, number>,
   participatedBuckets: Set<string>,
   winnersByBucket: Map<string, Set<string>>,
-  winnerLookupKey: string
+  winnerLookupKey: string,
+  currentBucket: string | null
 ): SeasonScoreResult {
   const tournaments: SeasonTournamentLine[] = tournamentOrder.map((bucket) => {
+    const inProgress = currentBucket != null && bucket === currentBucket;
     const participated = participatedBuckets.has(bucket);
     const points = participated ? pointsByBucket.get(bucket) ?? 0 : 0;
-    const missed = !participated;
+    const missed = !participated && !inProgress;
     const isWinner = winnersByBucket.get(bucket)?.has(winnerLookupKey) ?? false;
-    const winBonus = isWinner ? TOURNAMENT_WIN_BONUS : 0;
+    const winBonus = isWinner && !inProgress ? TOURNAMENT_WIN_BONUS : 0;
     return {
       bucket,
       tournamentName: bucketLabels.get(bucket) || bucket,
@@ -78,12 +82,14 @@ export function scoreTeamSeasonFromTournaments(
       missed,
       dropped: false,
       retainedWinBonus: false,
+      inProgress,
     };
   });
 
   const allTotal = tournaments.reduce((sum, row) => sum + row.total, 0);
-  const dropCount = seasonDropCount(tournaments.length);
-  const sortedForDrop = [...tournaments].sort((a, b) => {
+  const archived = tournaments.filter((row) => !row.inProgress);
+  const dropCount = seasonDropCount(archived.length);
+  const sortedForDrop = [...archived].sort((a, b) => {
     if (a.total !== b.total) return a.total - b.total;
     return a.bucket.localeCompare(b.bucket, 'fi');
   });
@@ -91,7 +97,9 @@ export function scoreTeamSeasonFromTournaments(
 
   let adjustedTotal = 0;
   for (const row of tournaments) {
-    if (droppedBuckets.has(row.bucket)) {
+    if (row.inProgress) {
+      adjustedTotal += row.points;
+    } else if (droppedBuckets.has(row.bucket)) {
       row.dropped = true;
       if (row.winBonus > 0) {
         row.retainedWinBonus = true;
@@ -223,7 +231,8 @@ export function buildTeamSeasonBoard(opts: {
         pointsByTeamAndBucket.get(teamKey) || new Map(),
         participatedByTeam.get(teamKey) || new Set(),
         winnersByBucket,
-        getWinnerLookupKey(teamKey)
+        getWinnerLookupKey(teamKey),
+        currentBucket
       );
 
       return {
