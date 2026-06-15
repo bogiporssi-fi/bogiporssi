@@ -81,7 +81,7 @@ export type PlayerStatRow = {
   /** players.points — vertailuun laskettuun summaan */
   playerPointsStored: number | null;
   /** Kausi: pisteet per turnaus (max per kisa). */
-  seasonByTournament?: Array<{ tournamentName: string; points: number }>;
+  seasonByTournament?: Array<{ bucket: string; tournamentName: string; points: number }>;
 };
 
 function ratingForName(players: any[], name: string): number | null {
@@ -212,7 +212,8 @@ export function buildPlayerSeasonRows(
   return toRows(seasonTotals, players).map((row) => ({
     ...row,
     breakdown: null,
-    seasonByTournament: (seasonByPlayer.get(row.name) ?? []).map(({ tournamentName, points }) => ({
+    seasonByTournament: (seasonByPlayer.get(row.name) ?? []).map(({ bucket, tournamentName, points }) => ({
+      bucket,
       tournamentName,
       points,
     })),

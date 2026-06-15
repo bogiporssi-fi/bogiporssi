@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { breakdownFromPlayerRow } from "../../lib/pointsBreakdown";
+import type { SeasonTournamentLine } from "../../lib/seasonScoring";
 import type { PlayerStatRow } from "../../lib/playerStats";
 import PlayerPointsBreakdownPanel from "./PlayerPointsBreakdownPanel";
 import TeamLogo from "./TeamLogo";
@@ -10,8 +11,10 @@ interface BoardEntry {
   uid?: string;
   name?: string;
   pts: number;
+  ptsAll?: number;
   isDQ?: boolean;
   lineup?: Array<{ playerName: string; points: number }>;
+  tournamentLines?: SeasonTournamentLine[];
 }
 
 interface LeaderboardsProps {
@@ -52,30 +55,39 @@ function resolveEntryUid(entry: BoardEntry, tab: "tournament" | "season", profil
   return profiles.find((p: any) => p.team_name === n)?.id;
 }
 
-function SeasonPlayerLineup({
-  rows,
-  playerInitials,
-}: {
-  rows: Array<{ playerName: string; points: number }>;
-  playerInitials: (n: string) => string;
-}) {
+function SeasonTeamTournamentBreakdown({ lines }: { lines: SeasonTournamentLine[] }) {
+  if (lines.length === 0) return null;
+
   return (
-    <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
-      {rows.map((row, i) => (
-        <div
-          key={`${row.playerName}-${i}`}
-          className="flex items-center justify-between gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-2 py-1.5"
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="pm-avatar pm-avatar--sm" aria-hidden>
-              {playerInitials(row.playerName)}
-            </div>
-            <span className="truncate text-xs font-semibold text-white/90">{row.playerName}</span>
-          </div>
-          <span className="shrink-0 text-xs font-extrabold tabular-nums text-sky-200/95">{row.points} p</span>
-        </div>
+    <ul className="pm-player-breakdown-list space-y-1">
+      {lines.map((line) => (
+        <li key={line.bucket} className={line.dropped ? "opacity-60" : undefined}>
+          <span className={line.dropped ? "line-through text-white/55" : "text-white/85"}>
+            {line.tournamentName}
+            {line.missed ? " (ei mukana)" : ""}
+          </span>
+          <span className="mx-1 font-semibold text-white/45">·</span>
+          <span className="font-extrabold tabular-nums text-sky-200/90">
+            {line.points} p
+            {line.winBonus > 0 ? (
+              <span className="text-amber-200/90"> + {line.winBonus} voitto</span>
+            ) : null}
+            {!line.dropped && line.winBonus > 0 ? (
+              <span className="text-white/55"> = {line.total} p</span>
+            ) : !line.dropped ? null : (
+              <span className="text-white/45"> (yht. {line.total} p)</span>
+            )}
+          </span>
+          {line.dropped && line.retainedWinBonus ? (
+            <span className="ml-1 text-[11px] font-semibold text-amber-200/85">
+              pudotettu · +{line.winBonus} p voittaja säilyy
+            </span>
+          ) : line.dropped ? (
+            <span className="ml-1 text-[11px] font-semibold text-white/40">pudotettu</span>
+          ) : null}
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -160,7 +172,7 @@ function SeasonTournamentBreakdown({
       <summary className="pm-player-breakdown-summary">Piste-erittely (kausi)</summary>
       <ul className="pm-player-breakdown-list">
         {lines.map((line) => (
-          <li key={line.tournamentName}>
+          <li key={line.bucket}>
             <span className="text-white/85">{line.tournamentName}</span>
             <span className="mx-1 font-semibold text-white/45">·</span>
             <span className="font-extrabold tabular-nums text-sky-200/90">{line.points} p</span>
@@ -296,7 +308,7 @@ export default function Leaderboards({
   const subTeams =
     tab === "tournament"
       ? "Fantasy-joukkueet: managerit joilla on tallennettuja valintoja tähän kisaan (picks). Ei sama kuin Pelaajat-välilehti."
-      : "Koko kauden pisteet: arkistoidut kisat + tämänhetkisen kisan pisteet yhteen.";
+      : "Kausi: 3 huonointa kisaa pudotetaan joukkuekohtaisesti. Sijoitus ja pääpisteet = pudotuksin; kaikki kisat näkyy erikseen.";
 
   const subPlayers =
     tab === "tournament"
@@ -412,13 +424,22 @@ export default function Leaderboards({
                 />
               );
             }
-          } else if (show && tab === "season") {
-            const lineup = entry.lineup?.length ? entry.lineup : [];
-            expandable = lineup.length > 0;
-            if (expandable) {
-              expandedBody = <SeasonPlayerLineup rows={lineup} playerInitials={initials} />;
-            }
+          } else if (tab === "season" && entry.tournamentLines && entry.tournamentLines.length > 0) {
+            expandable = true;
+            expandedBody = (
+              <div className="mt-2 border-t border-white/10 pt-2">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-white/45">
+                  Piste-erittely (kausi)
+                </p>
+                <SeasonTeamTournamentBreakdown lines={entry.tournamentLines} />
+              </div>
+            );
           }
+
+          const seasonWinBonusTotal =
+            tab === "season"
+              ? (entry.tournamentLines ?? []).reduce((sum, line) => sum + line.winBonus, 0)
+              : 0;
 
           const rowHeader = (
             <div className="pm-row-dense">
@@ -442,10 +463,26 @@ export default function Leaderboards({
                     <span className="pm-tag-value pm-tag-value-dq">DQ</span>
                   </span>
                 ) : (
-                  <span className="pm-tag pm-tag-points">
-                    <span className="pm-tag-label pm-tag-label-points">Pisteet</span>
-                    <span className="pm-tag-value pm-tag-value-points">{entry.pts} p</span>
-                  </span>
+                  <>
+                    <span className="pm-tag pm-tag-points">
+                      <span className="pm-tag-label pm-tag-label-points">
+                        {tab === "season" && entry.ptsAll != null ? "Kausi" : "Pisteet"}
+                      </span>
+                      <span className="pm-tag-value pm-tag-value-points">{entry.pts} p</span>
+                    </span>
+                    {tab === "season" && entry.ptsAll != null ? (
+                      <span className="pm-tag pm-tag-rating">
+                        <span className="pm-tag-label">Kaikki</span>
+                        <span className="pm-tag-value">{entry.ptsAll} p</span>
+                      </span>
+                    ) : null}
+                    {seasonWinBonusTotal > 0 ? (
+                      <span className="pm-tag pm-tag-price">
+                        <span className="pm-tag-label pm-tag-label-price">Voitot</span>
+                        <span className="pm-tag-value pm-tag-value-price">+{seasonWinBonusTotal} p</span>
+                      </span>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>

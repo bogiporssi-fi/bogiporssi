@@ -27,6 +27,7 @@ import {
 } from '../lib/archiveDisplay';
 import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib/hofSeasonStats';
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
+import { buildTeamSeasonBoard, TEAM_LEGACY_PREFIX } from '../lib/seasonScoring';
 import { ADMIN_EMAIL } from '../lib/adminEmail';
 import { isTournamentLocked } from '../lib/tournamentLocked';
 import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
@@ -985,17 +986,6 @@ export default function Home() {
   })();
 
   const seasonBoard = (() => {
-    /**
-     * Kausi = arkistoidut osiot (season_segment / legacy-bucket) + aktiivinen osio.
-     * Turnausbucket ≠ pelkkä näyttönimi → ei tuplaa vaikka nimi toistuisi.
-     */
-    const LEGACY_PREFIX = 'legacy:';
-    const stableKeyFromHistoryRow = (row: any) => {
-      const uid = row.user_id as string | undefined;
-      if (uid && typeof uid === 'string') return uid;
-      return `${LEGACY_PREFIX}${row.team_name || 'Nimetön tiimi'}`;
-    };
-
     const bucketLabels = buildHistoryBucketLabels(historyForDisplay, activeTournament);
     const currentBucket = currentSeasonBucket(activeTournament);
     const seenBuckets = new Set<string>();
@@ -1005,52 +995,27 @@ export default function Home() {
     seenBuckets.add(currentBucket);
     const tournamentOrder = sortSeasonBucketsDescending([...seenBuckets], currentBucket);
 
-    const totals = new Map<string, number>();
-    const pointsByTeamAndTournament = new Map<string, Map<string, number>>();
+    const winnerLookupKeyForTeamKey = (teamKey: string) =>
+      teamKey.startsWith(TEAM_LEGACY_PREFIX)
+        ? teamKey.slice(TEAM_LEGACY_PREFIX.length)
+        : getTeamDisplayNameByUid(teamKey);
 
-    const addTeamTournamentPts = (teamKey: string, tournamentBucket: string, pts: number) => {
-      if (!pointsByTeamAndTournament.has(teamKey)) pointsByTeamAndTournament.set(teamKey, new Map());
-      const m = pointsByTeamAndTournament.get(teamKey)!;
-      m.set(tournamentBucket, (m.get(tournamentBucket) || 0) + pts);
-      totals.set(teamKey, (totals.get(teamKey) || 0) + pts);
-    };
-
-    historyForDisplay.forEach((row: any) => {
-      if (isArchiveFieldSnapshotRow(row)) return;
-      const teamKey = stableKeyFromHistoryRow(row);
-      const b = historySeasonBucket(row);
-      const pts = Number(row.earned_points) || 0;
-      addTeamTournamentPts(teamKey, b, pts);
+    return buildTeamSeasonBoard({
+      history: historyForDisplay,
+      picks: picksForActiveTournament,
+      bucketLabels,
+      tournamentOrder,
+      currentBucket,
+      getPickPoints,
+      getTeamNameForPick: (pick) => {
+        const uid = pick?.user_id;
+        if (!uid) return null;
+        return winnerLookupKeyForTeamKey(String(uid));
+      },
+      isFieldSnapshot: isArchiveFieldSnapshotRow,
+      getTeamDisplayName: winnerLookupKeyForTeamKey,
+      getWinnerLookupKey: winnerLookupKeyForTeamKey,
     });
-
-    picksForActiveTournament.forEach((pick: any) => {
-      const uid = pick.user_id;
-      if (!uid) return;
-      addTeamTournamentPts(uid, currentBucket, getPickPoints(pick));
-    });
-
-    return Array.from(totals.entries())
-      .map(([key, pts]) => {
-        const m = pointsByTeamAndTournament.get(key) || new Map<string, number>();
-        const tournamentLines = tournamentOrder
-          .map((b) => ({
-            tournamentName: bucketLabels.get(b) || b,
-            points: m.get(b) || 0,
-          }))
-          .filter((line) => line.points !== 0);
-
-        const isLegacy = key.startsWith(LEGACY_PREFIX);
-        const name = isLegacy ? key.slice(LEGACY_PREFIX.length) : getTeamDisplayNameByUid(key);
-        const uid = isLegacy ? undefined : key;
-
-        return {
-          uid,
-          name,
-          pts,
-          tournamentLines,
-        };
-      })
-      .sort((a, b) => b.pts - a.pts);
   })();
 
   const hallOfFameItems = (() => {
@@ -1751,6 +1716,28 @@ export default function Home() {
                     </li>
                     <li>
                       <span className="font-extrabold text-white/90">Hole-in-one:</span> holarista +20 pistettä.
+                    </li>
+                  </ul>
+                </article>
+
+                <article className="pm-card pm-card--stack pm-rules-card">
+                  <div className="pm-row-dense pm-rules-card-head">
+                    <span className="pm-avatar" aria-hidden>
+                      📊
+                    </span>
+                    <h3 className="pm-name">Kausipisteytys (joukkueet)</h3>
+                  </div>
+                  <ul className="pm-rules-list">
+                    <li>
+                      Kauden sijoitus lasketaan pudottamalla joukkueen <strong>3 huonointa kisaa</strong> (vähiten
+                      pisteitä kyseisessä kisassa). Puuttuva kisa = 0 pistettä.
+                    </li>
+                    <li>
+                      Tulostaulukossa näkyy sekä pudotuksin laskettu kausi että kaikkien kisojen summa.
+                    </li>
+                    <li>
+                      <span className="font-extrabold text-white/90">Kisavoittaja:</span> fantasy-kisan voittaja saa
+                      +10 pistettä kausipisteisiin. Bonus säilyy vaikka kyseinen kisa jäisi pudotettuihin.
                     </li>
                   </ul>
                 </article>
