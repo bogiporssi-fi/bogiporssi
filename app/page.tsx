@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from 'react';
 import { isRefreshTokenAuthError, recoverFromStaleSupabaseAuth, supabase } from '../lib/supabase';
+import { fetchAllTournamentResults } from '../lib/fetchTournamentResults';
 import AdminPanel from './components/AdminPanel';
 import PlayerMarket from './components/PlayerMarket';
 import PlayerCard from './components/PlayerCard';
@@ -212,8 +213,8 @@ export default function Home() {
       if (profs) setProfiles(profs);
 
       // 2. Haetaan historiikki
-      const { data: hist } = await supabase.from('tournament_results').select('*').order('created_at', { ascending: false });
-      if (hist) setHistory(hist);
+      const hist = await fetchAllTournamentResults();
+      setHistory(hist);
 
       // 3. Haetaan valinnat ja LIIMATAAN pelaajatiedot niihin heti
       // Ilman turnauksen id:tä EI haeta koko picks-taulua — muuten Tulokset näyttää kaikkien kisojen vanhat joukkueet.
