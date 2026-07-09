@@ -30,7 +30,7 @@ import { seasonHioTotalsByPlayerName, seasonHotTotalsByPlayerName } from '../lib
 import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerStats';
 import { buildTeamSeasonBoard, TEAM_LEGACY_PREFIX } from '../lib/seasonScoring';
 import { ADMIN_EMAIL } from '../lib/adminEmail';
-import { isTournamentLocked } from '../lib/tournamentLocked';
+import { isTournamentEffectivelyLocked } from '../lib/tournamentLocked';
 import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
 import { parsePdgaCsvMiddleColumn, parsePdgaNumberInput } from '../lib/pdga';
 
@@ -140,8 +140,26 @@ export default function Home() {
   /** `${userId}:${tournamentId}:${season_segment}` — uusi kisa (segment++) nollaa luonnoksen; sama avain sallii allekirjoitusvertailun tallentamattomalle luonnokselle. */
   const draftHydratedKeyRef = useRef<string | null>(null);
 
+  const [, setLockScheduleTick] = useState(0);
   const BUDGET = 1000000;
-  const tournamentLocked = isTournamentLocked(activeTournament?.is_locked);
+  const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
+
+  // Päivitä näkymä kun ajastettu lukitus aktivoituu (ilman sivun uudelleenlatausta).
+  useEffect(() => {
+    const lockAt = activeTournament?.lock_at;
+    if (!lockAt || isTournamentEffectivelyLocked(activeTournament)) return;
+    const ms = Date.parse(lockAt);
+    if (!Number.isFinite(ms)) return;
+    const now = Date.now();
+    if (ms <= now) return;
+    const untilLock = ms - now;
+    const interval = setInterval(() => setLockScheduleTick((n) => n + 1), 30_000);
+    const timeout = setTimeout(() => setLockScheduleTick((n) => n + 1), untilLock + 500);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [activeTournament?.lock_at, activeTournament?.is_locked]);
 
   // --- KIRJAUTUMISEN SEURANTA ---
   useEffect(() => {
@@ -472,14 +490,14 @@ export default function Home() {
       let tournamentErr = (
         await supabase
           .from('tournaments')
-          .update({ is_locked: false, name: 'Uusi Turnaus', season_segment: segmentEnding + 1 })
+          .update({ is_locked: false, name: 'Uusi Turnaus', season_segment: segmentEnding + 1, lock_at: null })
           .eq('id', activeTournament.id)
       ).error;
       if (tournamentErr && missingColumnErr(tournamentErr, 'season_segment')) {
         tournamentErr = (
           await supabase
             .from('tournaments')
-            .update({ is_locked: false, name: 'Uusi Turnaus' })
+            .update({ is_locked: false, name: 'Uusi Turnaus', lock_at: null })
             .eq('id', activeTournament.id)
         ).error;
       }
@@ -672,8 +690,31 @@ export default function Home() {
 
   async function toggleTournamentLock() {
     if (!activeTournament) return;
-    await supabase.from('tournaments').update({ is_locked: !tournamentLocked }).eq('id', activeTournament.id);
+    await supabase
+      .from('tournaments')
+      .update({ is_locked: !tournamentLocked, lock_at: null })
+      .eq('id', activeTournament.id);
     loadData();
+  }
+
+  async function updateTournamentLockSchedule(lockAtIso: string | null) {
+    if (!activeTournament?.id) return;
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ lock_at: lockAtIso })
+      .eq('id', activeTournament.id);
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('lock_at')) {
+        alert(
+          'Lukitusajankohtaa ei voitu tallentaa. Aja Supabasessa migraatio 20260703_tournaments_lock_at.sql.'
+        );
+        return;
+      }
+      alert('Lukitusajankohdan tallennus epäonnistui: ' + formatSupabaseErr(error));
+      return;
+    }
+    setActiveTournament({ ...activeTournament, lock_at: lockAtIso });
   }
 
   // --- PELILOGIIKKA (Osto & Poisto) ---
@@ -1466,6 +1507,7 @@ export default function Home() {
           importResultsFromCsvFile={importResultsFromCsvFile}
           startNewTournament={startNewTournament}
           toggleTournamentLock={toggleTournamentLock}
+          updateTournamentLockSchedule={updateTournamentLockSchedule}
           picksRowCountForActiveTournament={picksForActiveTournament.length}
           allTeamsPicks={picksForActiveTournament}
           profiles={profiles}

@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ARCHIVE_HOT_HIO_AUX_TEAM_NAME } from '../../lib/archiveDisplay';
 import { supabase } from '../../lib/supabase';
-import { isTournamentLocked } from '../../lib/tournamentLocked';
+import { isTournamentEffectivelyLocked, lockAtToDatetimeLocalValue, datetimeLocalValueToLockAtIso, formatLockAtFi } from '../../lib/tournamentLocked';
 
 interface AdminPanelProps {
   activeTournament: any;
@@ -18,6 +18,7 @@ interface AdminPanelProps {
   importResultsFromCsvFile: (file: File) => void | Promise<void>;
   startNewTournament: () => void;
   toggleTournamentLock: () => void;
+  updateTournamentLockSchedule: (lockAtIso: string | null) => void | Promise<void>;
   /** Aktiivisen turnauksen pick-rivejä (Tulokset / vianetsintä). */
   picksRowCountForActiveTournament: number;
   /** Kaikki managerien pickit tässä turnauksessa (rosterit). */
@@ -79,6 +80,7 @@ export default function AdminPanel({
   importResultsFromCsvFile,
   startNewTournament,
   toggleTournamentLock,
+  updateTournamentLockSchedule,
   picksRowCountForActiveTournament,
   allTeamsPicks,
   profiles,
@@ -89,7 +91,43 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const resultsCsvRef = useRef<HTMLInputElement>(null);
   const tournamentId = activeTournament?.id;
-  const tournamentLocked = isTournamentLocked(activeTournament?.is_locked);
+  const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
+  const [lockScheduleInput, setLockScheduleInput] = useState('');
+  const [, setScheduleTick] = useState(0);
+
+  useEffect(() => {
+    setLockScheduleInput(lockAtToDatetimeLocalValue(activeTournament?.lock_at));
+  }, [activeTournament?.lock_at, activeTournament?.id]);
+
+  useEffect(() => {
+    const lockAt = activeTournament?.lock_at;
+    if (!lockAt || tournamentLocked) return;
+    const ms = Date.parse(lockAt);
+    if (!Number.isFinite(ms) || ms <= Date.now()) return;
+    const id = setInterval(() => setScheduleTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [activeTournament?.lock_at, tournamentLocked]);
+
+  const lockScheduleHint = (() => {
+    const lockAt = activeTournament?.lock_at;
+    if (!lockAt) return null;
+    const formatted = formatLockAtFi(lockAt);
+    if (tournamentLocked && !activeTournament?.is_locked) {
+      return formatted ? `Ajastettu lukitus aktivoitui (${formatted}).` : null;
+    }
+    if (tournamentLocked) return null;
+    const ms = Date.parse(lockAt);
+    if (!Number.isFinite(ms)) return null;
+    const diff = ms - Date.now();
+    if (diff <= 0) return 'Lukitus aktivoituu heti…';
+    const h = Math.floor(diff / 3_600_000);
+    const m = Math.floor((diff % 3_600_000) / 60_000);
+    if (h > 48 && formatted) return `Lukitus: ${formatted}`;
+    const parts = [];
+    if (h > 0) parts.push(`${h} h`);
+    if (m > 0 || h === 0) parts.push(`${m} min`);
+    return `Lukittuu ${parts.join(' ')} kuluttua${formatted ? ` (${formatted})` : ''}`;
+  })();
 
   const [swapUserId, setSwapUserId] = useState('');
   const [swapPickId, setSwapPickId] = useState('');
@@ -899,6 +937,9 @@ export default function AdminPanel({
           Se <strong style={{ color: 'rgba(255,255,255,0.88)' }}>ei tyhjennä</strong> <span style={{ fontFamily: 'ui-monospace, monospace' }}>picks</span>-taulua eikä aloita uutta kierrosta.
         </p>
         <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Ajastettu lukitus:</strong> aseta päivä ja aika — kisa lukittuu automaattisesti ilman manuaalista napautusta (toimii kaikille käyttäjille, kun he avaavat sivun).
+        </p>
+        <p style={{ margin: '0 0 8px' }}>
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Uusi kisa</strong> arkistoi tämän kisan valinnat ja pisteet historiaan, nollaa kenttäpelaajien tilastot, poistaa tämän turnauksen pick-rivit ja avaa seuraavan osion (
           <span style={{ fontFamily: 'ui-monospace, monospace' }}>season_segment</span> +1). Tyhjä rosteri = tämä polku.
         </p>
@@ -918,6 +959,58 @@ export default function AdminPanel({
         >
           Vianetsintä: turnaus-id {tournamentId ? String(tournamentId) : '—'} · pick-rivejä tässä kisassa: {picksRowCountForActiveTournament}
         </p>
+      </div>
+
+      <div style={styles.tournamentNameBox}>
+        <div style={styles.labelRow}>
+          <div style={styles.dot('#f59e0b')} />
+          <label style={styles.label}>Ajasta lukitus</label>
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+          Käytä paikallista aikaa (selaimen aikavyöhyke). Tyhjennä ja tallenna poistaaksesi ajastuksen.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', maxWidth: '520px' }}>
+          <input
+            type="datetime-local"
+            className="bp-input"
+            value={lockScheduleInput}
+            onChange={(e) => setLockScheduleInput(e.target.value)}
+            disabled={!tournamentId}
+            aria-label="Lukituksen ajankohta"
+            style={{ flex: '1 1 220px', minWidth: 0 }}
+          />
+          <button
+            type="button"
+            className="bp-tab"
+            disabled={!tournamentId}
+            onClick={() => {
+              const iso = datetimeLocalValueToLockAtIso(lockScheduleInput);
+              if (lockScheduleInput.trim() && !iso) {
+                alert('Virheellinen päivämäärä tai aika.');
+                return;
+              }
+              void updateTournamentLockSchedule(iso);
+            }}
+          >
+            Tallenna ajastus
+          </button>
+          {activeTournament?.lock_at ? (
+            <button
+              type="button"
+              className="bp-tab"
+              disabled={!tournamentId}
+              onClick={() => {
+                setLockScheduleInput('');
+                void updateTournamentLockSchedule(null);
+              }}
+            >
+              Poista ajastus
+            </button>
+          ) : null}
+        </div>
+        {lockScheduleHint ? (
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'rgba(251,191,36,0.9)' }}>{lockScheduleHint}</p>
+        ) : null}
       </div>
 
       <div style={styles.tournamentNameBox}>
