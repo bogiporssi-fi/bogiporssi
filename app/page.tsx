@@ -141,7 +141,9 @@ export default function Home() {
   const draftHydratedKeyRef = useRef<string | null>(null);
 
   const [, setLockScheduleTick] = useState(0);
-  const BUDGET = 1000000;
+  const DEFAULT_BUDGET = 1_000_000;
+  const rawBudget = Number(activeTournament?.budget);
+  const BUDGET = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : DEFAULT_BUDGET;
   const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
 
   // Päivitä näkymä kun ajastettu lukitus aktivoituu (ilman sivun uudelleenlatausta).
@@ -490,16 +492,43 @@ export default function Home() {
       let tournamentErr = (
         await supabase
           .from('tournaments')
-          .update({ is_locked: false, name: 'Uusi Turnaus', season_segment: segmentEnding + 1, lock_at: null })
+          .update({
+            is_locked: false,
+            name: 'Uusi Turnaus',
+            season_segment: segmentEnding + 1,
+            lock_at: null,
+            budget: DEFAULT_BUDGET,
+          })
           .eq('id', activeTournament.id)
       ).error;
+      if (tournamentErr && missingColumnErr(tournamentErr, 'budget')) {
+        tournamentErr = (
+          await supabase
+            .from('tournaments')
+            .update({
+              is_locked: false,
+              name: 'Uusi Turnaus',
+              season_segment: segmentEnding + 1,
+              lock_at: null,
+            })
+            .eq('id', activeTournament.id)
+        ).error;
+      }
       if (tournamentErr && missingColumnErr(tournamentErr, 'season_segment')) {
         tournamentErr = (
           await supabase
             .from('tournaments')
-            .update({ is_locked: false, name: 'Uusi Turnaus', lock_at: null })
+            .update({ is_locked: false, name: 'Uusi Turnaus', lock_at: null, budget: DEFAULT_BUDGET })
             .eq('id', activeTournament.id)
         ).error;
+        if (tournamentErr && missingColumnErr(tournamentErr, 'budget')) {
+          tournamentErr = (
+            await supabase
+              .from('tournaments')
+              .update({ is_locked: false, name: 'Uusi Turnaus', lock_at: null })
+              .eq('id', activeTournament.id)
+          ).error;
+        }
       }
       if (tournamentErr) {
         alert(
@@ -715,6 +744,31 @@ export default function Home() {
       return;
     }
     setActiveTournament({ ...activeTournament, lock_at: lockAtIso });
+  }
+
+  async function updateTournamentBudget(budget: number) {
+    if (!activeTournament?.id) return;
+    const next = Math.round(Number(budget));
+    if (!Number.isFinite(next) || next <= 0) {
+      alert('Budjetin on oltava positiivinen kokonaisluku.');
+      return;
+    }
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ budget: next })
+      .eq('id', activeTournament.id);
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('budget')) {
+        alert(
+          'Budjettia ei voitu tallentaa. Aja Supabasessa migraatio 20260724_tournaments_budget.sql.'
+        );
+        return;
+      }
+      alert('Budjetin tallennus epäonnistui: ' + formatSupabaseErr(error));
+      return;
+    }
+    setActiveTournament({ ...activeTournament, budget: next });
   }
 
   // --- PELILOGIIKKA (Osto & Poisto) ---
@@ -1508,6 +1562,7 @@ export default function Home() {
           startNewTournament={startNewTournament}
           toggleTournamentLock={toggleTournamentLock}
           updateTournamentLockSchedule={updateTournamentLockSchedule}
+          updateTournamentBudget={updateTournamentBudget}
           picksRowCountForActiveTournament={picksForActiveTournament.length}
           allTeamsPicks={picksForActiveTournament}
           profiles={profiles}

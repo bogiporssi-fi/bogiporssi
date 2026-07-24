@@ -19,6 +19,7 @@ interface AdminPanelProps {
   startNewTournament: () => void;
   toggleTournamentLock: () => void;
   updateTournamentLockSchedule: (lockAtIso: string | null) => void | Promise<void>;
+  updateTournamentBudget: (budget: number) => void | Promise<void>;
   /** Aktiivisen turnauksen pick-rivejä (Tulokset / vianetsintä). */
   picksRowCountForActiveTournament: number;
   /** Kaikki managerien pickit tässä turnauksessa (rosterit). */
@@ -81,6 +82,7 @@ export default function AdminPanel({
   startNewTournament,
   toggleTournamentLock,
   updateTournamentLockSchedule,
+  updateTournamentBudget,
   picksRowCountForActiveTournament,
   allTeamsPicks,
   profiles,
@@ -92,12 +94,20 @@ export default function AdminPanel({
   const resultsCsvRef = useRef<HTMLInputElement>(null);
   const tournamentId = activeTournament?.id;
   const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
+  const DEFAULT_BUDGET = 1_000_000;
   const [lockScheduleInput, setLockScheduleInput] = useState('');
+  const [budgetInput, setBudgetInput] = useState(String(DEFAULT_BUDGET));
   const [, setScheduleTick] = useState(0);
 
   useEffect(() => {
     setLockScheduleInput(lockAtToDatetimeLocalValue(activeTournament?.lock_at));
   }, [activeTournament?.lock_at, activeTournament?.id]);
+
+  useEffect(() => {
+    const raw = Number(activeTournament?.budget);
+    const budget = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_BUDGET;
+    setBudgetInput(String(budget));
+  }, [activeTournament?.budget, activeTournament?.id]);
 
   useEffect(() => {
     const lockAt = activeTournament?.lock_at;
@@ -940,6 +950,9 @@ export default function AdminPanel({
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Ajastettu lukitus:</strong> aseta päivä ja aika — kisa lukittuu automaattisesti ilman manuaalista napautusta (toimii kaikille käyttäjille, kun he avaavat sivun).
         </p>
         <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Pelaajabudjetti:</strong> voit laskea tai nostaa kassakattoa tälle kisalle (esim. heikompien pelaajien turnaukseen). Uusi kisa palauttaa oletuksen.
+        </p>
+        <p style={{ margin: '0 0 8px' }}>
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Uusi kisa</strong> arkistoi tämän kisan valinnat ja pisteet historiaan, nollaa kenttäpelaajien tilastot, poistaa tämän turnauksen pick-rivit ja avaa seuraavan osion (
           <span style={{ fontFamily: 'ui-monospace, monospace' }}>season_segment</span> +1). Tyhjä rosteri = tämä polku.
         </p>
@@ -1011,6 +1024,63 @@ export default function AdminPanel({
         {lockScheduleHint ? (
           <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'rgba(251,191,36,0.9)' }}>{lockScheduleHint}</p>
         ) : null}
+      </div>
+
+      <div style={styles.tournamentNameBox}>
+        <div style={styles.labelRow}>
+          <div style={styles.dot('#34d399')} />
+          <label style={styles.label}>Pelaajabudjetti</label>
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+          Kassakatto euroina tälle kisalle (oletus {DEFAULT_BUDGET.toLocaleString('fi-FI')} €). Uuden kisan aloituksessa budjetti palautuu oletukseen.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', maxWidth: '520px' }}>
+          <input
+            type="number"
+            className="bp-input"
+            min={1}
+            step={1000}
+            value={budgetInput}
+            onChange={(e) => setBudgetInput(e.target.value)}
+            disabled={!tournamentId}
+            aria-label="Pelaajabudjetti euroina"
+            style={{ flex: '1 1 180px', minWidth: 0 }}
+          />
+          <button
+            type="button"
+            className="bp-tab"
+            disabled={!tournamentId}
+            onClick={() => {
+              const next = Math.round(Number(budgetInput));
+              if (!Number.isFinite(next) || next <= 0) {
+                alert('Budjetin on oltava positiivinen kokonaisluku.');
+                return;
+              }
+              void updateTournamentBudget(next);
+            }}
+          >
+            Tallenna budjetti
+          </button>
+          <button
+            type="button"
+            className="bp-tab"
+            disabled={!tournamentId}
+            onClick={() => {
+              setBudgetInput(String(DEFAULT_BUDGET));
+              void updateTournamentBudget(DEFAULT_BUDGET);
+            }}
+          >
+            Palauta oletus
+          </button>
+        </div>
+        <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+          Käytössä:{' '}
+          {(Number.isFinite(Number(activeTournament?.budget)) && Number(activeTournament?.budget) > 0
+            ? Math.round(Number(activeTournament.budget))
+            : DEFAULT_BUDGET
+          ).toLocaleString('fi-FI')}{' '}
+          €
+        </p>
       </div>
 
       <div style={styles.tournamentNameBox}>
