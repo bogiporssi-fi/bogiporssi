@@ -1,5 +1,6 @@
 import { breakdownFromPlayerRow, type PointsBreakdown } from './pointsBreakdown';
 import { currentSeasonBucket, historySeasonBucket, parseSegmentNumberFromBucket } from './seasonSegment';
+import { isPairHistoryRow, isPairPlayer } from './pairEntry';
 
 export type { PointsBreakdown };
 
@@ -54,7 +55,10 @@ export function fantasyPlacementInBucket(
   const nameKey = String(playerName || '').trim();
   if (!nameKey || !bucketRow) return null;
   const bucket = historySeasonBucket(bucketRow);
-  const inBucket = (allHistory || []).filter((r) => historySeasonBucket(r) === bucket);
+  const wantPair = isPairHistoryRow(bucketRow);
+  const inBucket = (allHistory || []).filter(
+    (r) => isPairHistoryRow(r) === wantPair && historySeasonBucket(r) === bucket
+  );
   const byName = new Map<string, number>();
   for (const r of inBucket) {
     const n = String(r?.player_name || '').trim();
@@ -114,11 +118,17 @@ function toRows(map: Map<string, number>, players: any[]): PlayerStatRow[] {
 
 /**
  * Tämä kisa: kaikki kentällä olevat (is_active) ja heidän tuloksensa players.points -kentästä.
+ * MPO-parikisassa näytetään vain parit; normaalissa kisassa vain yksittäiset pelaajat.
  */
-export function buildPlayerTournamentRows(players: any[]): PlayerStatRow[] {
+export function buildPlayerTournamentRows(
+  players: any[],
+  opts?: { pairsOnly?: boolean }
+): PlayerStatRow[] {
+  const pairsOnly = Boolean(opts?.pairsOnly);
   const byName = new Map<string, number>();
   players.forEach((p: any) => {
     if (!p?.is_active) return;
+    if (pairsOnly ? !isPairPlayer(p) : isPairPlayer(p)) return;
     const name = String(p.name || '').trim();
     if (!name) return;
     byName.set(name, Number(p.points) || 0);
@@ -153,6 +163,7 @@ export function buildPlayerSeasonRows(
   };
 
   history.forEach((row: any) => {
+    if (isPairHistoryRow(row)) return;
     const b = historySeasonBucket(row);
     if (!bucketLabels.has(b)) {
       bucketLabels.set(b, row.tournament_name || 'Tuntematon turnaus');
@@ -167,7 +178,7 @@ export function buildPlayerSeasonRows(
   bucketLabels.set(currentB, opts.name);
 
   players.forEach((p: any) => {
-    if (!p?.is_active) return;
+    if (!p?.is_active || isPairPlayer(p)) return;
     const name = String(p.name || '').trim();
     if (!name) return;
     addMax(currentB, name, Number(p.points) || 0);
@@ -182,7 +193,7 @@ export function buildPlayerSeasonRows(
 
   /** Aktiiviset joilla ei vielä yhtään riviä (ei historiaa, 0 p) — näkyvät listassa. */
   players.forEach((p: any) => {
-    if (!p?.is_active) return;
+    if (!p?.is_active || isPairPlayer(p)) return;
     const name = String(p.name || '').trim();
     if (!name) return;
     if (!seasonTotals.has(name)) seasonTotals.set(name, 0);

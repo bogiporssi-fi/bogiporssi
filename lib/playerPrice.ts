@@ -17,6 +17,8 @@ function normPlayerNameKey(name: string): string {
 /** Kiinteät markkinahinnat (nimi normalisoitu). Lisää tarvittaessa. */
 const FIXED_PLAYER_MARKET_PRICES: Record<string, number> = {
   'gannon buhr': 299_000,
+  // DGPT Doubles 2026: pari on oma markkinakohteensa.
+  heimbuhrg: 285_000,
 };
 
 export function getPlayerMarketPrice(player: {

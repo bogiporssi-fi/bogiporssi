@@ -9,6 +9,7 @@ import {
   positionBonusFromHistoryRow,
 } from "../../lib/playerStats";
 import { pdgaPlayerUrl } from "../../lib/pdga";
+import { pairMembersFromPlayer } from "../../lib/pairEntry";
 
 type Props = {
   player: any;
@@ -152,6 +153,7 @@ export default function PlayerCard({
   const rating = Number.isFinite(ratingNum) ? ratingNum : null;
   const price = rating != null ? getPrice(rating, player?.name) : null;
   const playerName = player?.name || "Tuntematon pelaaja";
+  const pairMembers = pairMembersFromPlayer(player);
   const pdgaNRaw = Number(player?.pdga_number);
   const pdgaN = Number.isFinite(pdgaNRaw) && pdgaNRaw > 0 ? Math.round(pdgaNRaw) : null;
 
@@ -189,6 +191,11 @@ export default function PlayerCard({
                   </span>
                 </span>
               </div>
+              {pairMembers.length === 2 && (
+                <p className="mt-2 text-sm text-white/65">
+                  {pairMembers.map((member) => `${member.name} (${member.rating})`).join(" · ")}
+                </p>
+              )}
               {pdgaN != null && (
                 <p className="pm-pc-pdga-row">
                   <a

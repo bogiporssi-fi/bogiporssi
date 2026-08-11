@@ -33,6 +33,16 @@ import { ADMIN_EMAIL } from '../lib/adminEmail';
 import { isTournamentEffectivelyLocked } from '../lib/tournamentLocked';
 import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
 import { parsePdgaCsvMiddleColumn, parsePdgaNumberInput } from '../lib/pdga';
+import { decodeDoublesFieldCsv } from '../lib/doublesFieldImport';
+import { isPairHistoryRow, isPairPlayer } from '../lib/pairEntry';
+import {
+  getDefaultBudgetForFormat,
+  getMarketEntityLabels,
+  getTournamentFormat,
+  getTournamentRosterSize,
+  isMpoPairsTournament,
+  type TournamentFormat,
+} from '../lib/tournamentRules';
 
 /** Arkistointi: fantasy-pisteet pelaajan tilastoista (sama kaava kuin pick-riveillä). */
 function archiveEarnedPointsFromPlayer(player: any): number {
@@ -144,6 +154,9 @@ export default function Home() {
   const DEFAULT_BUDGET = 1_000_000;
   const rawBudget = Number(activeTournament?.budget);
   const BUDGET = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : DEFAULT_BUDGET;
+  const tournamentFormat = getTournamentFormat(activeTournament);
+  const rosterSize = getTournamentRosterSize(activeTournament);
+  const entityLabels = getMarketEntityLabels(activeTournament);
   const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
 
   // Päivitä näkymä kun ajastettu lukitus aktivoituu (ilman sivun uudelleenlatausta).
@@ -182,25 +195,40 @@ export default function Home() {
     window.addEventListener('unhandledrejection', onUnhandledRejection);
 
     void (async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (error && isRefreshTokenAuthError(error)) {
-        await recoverFromStaleSupabaseAuth();
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
         if (cancelled) return;
-        draftHydratedKeyRef.current = null;
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadData();
-      } else {
-        setLoading(false);
+        if (error && isRefreshTokenAuthError(error)) {
+          await recoverFromStaleSupabaseAuth();
+          if (cancelled) return;
+          draftHydratedKeyRef.current = null;
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          loadData();
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        if (isRefreshTokenAuthError(err)) {
+          await recoverFromStaleSupabaseAuth();
+          if (cancelled) return;
+          draftHydratedKeyRef.current = null;
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        if (!cancelled) setLoading(false);
       }
     })();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        void recoverFromStaleSupabaseAuth();
+      }
       setUser(session?.user ?? null);
       if (session?.user) {
         loadData();
@@ -309,7 +337,7 @@ export default function Home() {
   }
   // --- ADMIN TOIMINNOT ---
 
-  async function startNewTournament() {
+  async function startNewTournament(nextFormat: TournamentFormat = 'singles') {
     if (!activeTournament) return;
 
     // Tarkistetaan nimen tilanne
@@ -320,7 +348,11 @@ export default function Home() {
       kisanNimi = askName;
     }
 
-    const confirmStart = confirm(`Arkistoidaanko kisa nimellä "${kisanNimi}"? Tämä tyhjentää pelaajien pisteet ja kaikkien joukkueet.`);
+    const nextLabel = nextFormat === 'mpo_pairs' ? 'MPO-parikisa (3 paria / 600 000 €)' : 'normaali kisa';
+    const confirmStart = confirm(
+      `Arkistoidaanko kisa nimellä "${kisanNimi}" ja aloitetaanko seuraavaksi ${nextLabel}? ` +
+        'Tämä tyhjentää pelaajien pisteet ja kaikkien joukkueet.'
+    );
 
     if (!confirmStart) return;
 
@@ -345,6 +377,17 @@ export default function Home() {
         activeTournament.season_segment != null && Number.isFinite(Number(activeTournament.season_segment))
           ? Number(activeTournament.season_segment)
           : 1;
+      const nextPairsSnapshot =
+        nextFormat === 'mpo_pairs'
+          ? {
+              active_player_ids: players
+                .filter((player: any) => player?.is_active && !isPairPlayer(player))
+                .map((player: any) => String(player.id))
+                .filter(Boolean),
+              budget: BUDGET,
+              captured_at: new Date().toISOString(),
+            }
+          : null;
 
       const tid = activeTournament.id != null && String(activeTournament.id) !== '' ? String(activeTournament.id) : '';
       const picksForArchive =
@@ -378,6 +421,7 @@ export default function Home() {
             season_segment: segmentEnding,
             hot_rounds: Number(player.hot_rounds) || 0,
             hio_count: Number(player.hio_count) || 0,
+            entry_type: isPairPlayer(player) ? 'pair' : 'player',
           });
         }
       });
@@ -401,12 +445,21 @@ export default function Home() {
           season_segment: segmentEnding,
           hot_rounds: Number(player.hot_rounds) || 0,
           hio_count: Number(player.hio_count) || 0,
+          entry_type: isPairPlayer(player) ? 'pair' : 'player',
         });
       });
 
       if (archiveData.length > 0) {
         let batch: any[] = archiveData;
         let insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        if (insErr && missingColumnErr(insErr, 'entry_type')) {
+          batch = batch.map((row) => {
+            const rest = { ...row };
+            delete rest.entry_type;
+            return rest;
+          });
+          insErr = (await supabase.from('tournament_results').insert(batch)).error;
+        }
         if (insErr && missingColumnErr(insErr, 'user_id')) {
           batch = batch.map(({ user_id, ...rest }) => rest);
           insErr = (await supabase.from('tournament_results').insert(batch)).error;
@@ -497,7 +550,9 @@ export default function Home() {
             name: 'Uusi Turnaus',
             season_segment: segmentEnding + 1,
             lock_at: null,
-            budget: DEFAULT_BUDGET,
+            budget: getDefaultBudgetForFormat(nextFormat),
+            format: nextFormat,
+            pre_pairs_state: nextPairsSnapshot,
           })
           .eq('id', activeTournament.id)
       ).error;
@@ -510,6 +565,8 @@ export default function Home() {
               name: 'Uusi Turnaus',
               season_segment: segmentEnding + 1,
               lock_at: null,
+              format: nextFormat,
+              pre_pairs_state: nextPairsSnapshot,
             })
             .eq('id', activeTournament.id)
         ).error;
@@ -518,14 +575,27 @@ export default function Home() {
         tournamentErr = (
           await supabase
             .from('tournaments')
-            .update({ is_locked: false, name: 'Uusi Turnaus', lock_at: null, budget: DEFAULT_BUDGET })
+            .update({
+              is_locked: false,
+              name: 'Uusi Turnaus',
+              lock_at: null,
+              budget: getDefaultBudgetForFormat(nextFormat),
+              format: nextFormat,
+              pre_pairs_state: nextPairsSnapshot,
+            })
             .eq('id', activeTournament.id)
         ).error;
         if (tournamentErr && missingColumnErr(tournamentErr, 'budget')) {
           tournamentErr = (
             await supabase
               .from('tournaments')
-              .update({ is_locked: false, name: 'Uusi Turnaus', lock_at: null })
+              .update({
+                is_locked: false,
+                name: 'Uusi Turnaus',
+                lock_at: null,
+                format: nextFormat,
+                pre_pairs_state: nextPairsSnapshot,
+              })
               .eq('id', activeTournament.id)
           ).error;
         }
@@ -537,6 +607,36 @@ export default function Home() {
             '\n\nJos viesti mainitsee oikeudet (RLS / policy), lisää Supabaseen UPDATE-oikeus tournaments-tauluun.'
         );
         return;
+      }
+
+      if (nextFormat === 'singles') {
+        const { error: deactivatePairsErr } = await supabase
+          .from('players')
+          .update({ is_active: false })
+          .not('pair_members', 'is', null);
+        if (deactivatePairsErr) {
+          alert(
+            'Kisa arkistoitiin, mutta paririvien deaktivointi epäonnistui: ' +
+              formatSupabaseErr(deactivatePairsErr)
+          );
+          return;
+        }
+        const restoreIds = Array.isArray(activeTournament.pre_pairs_state?.active_player_ids)
+          ? activeTournament.pre_pairs_state.active_player_ids.map(String).filter(Boolean)
+          : [];
+        if (restoreIds.length > 0) {
+          const { error: restoreSinglesErr } = await supabase
+            .from('players')
+            .update({ is_active: true })
+            .in('id', restoreIds);
+          if (restoreSinglesErr) {
+            alert(
+              'Kisa arkistoitiin, mutta singles-kentän palautus epäonnistui: ' +
+                formatSupabaseErr(restoreSinglesErr)
+            );
+            return;
+          }
+        }
       }
 
       alert(`Kisa "${kisanNimi}" arkistoitu onnistuneesti!`);
@@ -571,6 +671,11 @@ export default function Home() {
   async function handleRatingImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (isMpoPairsTournament(activeTournament)) {
+      e.target.value = '';
+      alert('MPO-parikisassa käytä erillistä Doubles-kenttä CSV -tuontia.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async (event) => {
       const text = event.target?.result as string;
@@ -604,6 +709,170 @@ export default function Home() {
       loadData();
     };
     reader.readAsText(file, 'windows-1252');
+  }
+
+  async function handleDoublesFieldImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !activeTournament?.id) return;
+    if (!isMpoPairsTournament(activeTournament)) {
+      alert('Doubles-kentän voi tuoda vain MPO-parikisa-muodossa.');
+      return;
+    }
+
+    const parsed = decodeDoublesFieldCsv(await file.arrayBuffer());
+    if (parsed.errors.length > 0) {
+      alert('Doubles-CSV:tä ei tuotu:\n\n' + parsed.errors.slice(0, 12).join('\n'));
+      return;
+    }
+    if (parsed.pairs.length === 0) {
+      alert('CSV:stä ei löytynyt yhtään valmista paria.');
+      return;
+    }
+
+    const confirmed = confirm(
+      `Tuodaanko ${parsed.pairs.length} paria (${parsed.encoding})? ` +
+        'Nykyiset singles-pelaajat poistuvat pelaajatorilta tämän kisan ajaksi.'
+    );
+    if (!confirmed) return;
+
+    const activeSinglesIds = players
+      .filter((player: any) => player?.is_active && !isPairPlayer(player))
+      .map((player: any) => String(player.id))
+      .filter(Boolean);
+    const existingSnapshot = activeTournament.pre_pairs_state;
+    const snapshot =
+      Array.isArray(existingSnapshot?.active_player_ids) && existingSnapshot.active_player_ids.length > 0
+        ? existingSnapshot
+        : {
+            active_player_ids: activeSinglesIds,
+            budget: DEFAULT_BUDGET,
+            captured_at: new Date().toISOString(),
+          };
+
+    const pairIds: string[] = [];
+    for (const pair of parsed.pairs) {
+      const payload = {
+        official_rating: pair.averageRating,
+        pair_members: pair.members,
+        is_active: false,
+        points: 0,
+        par_score: 0,
+        rounds_played: 0,
+        hot_rounds: 0,
+        hio_count: 0,
+        position_bonus: 0,
+        round_breakdown: null,
+        pdga_number: null,
+      };
+      const updated = await supabase
+        .from('players')
+        .update(payload)
+        .ilike('name', pair.teamName)
+        .select('id');
+      if (updated.error) {
+        alert(`Parin "${pair.teamName}" päivitys epäonnistui: ${formatSupabaseErr(updated.error)}`);
+        return;
+      }
+      if (updated.data?.length) {
+        pairIds.push(...updated.data.map((row: any) => String(row.id)));
+      } else {
+        const inserted = await supabase
+          .from('players')
+          .insert([{ name: pair.teamName, ...payload }])
+          .select('id')
+          .single();
+        if (inserted.error || !inserted.data?.id) {
+          alert(`Parin "${pair.teamName}" lisäys epäonnistui: ${formatSupabaseErr(inserted.error)}`);
+          return;
+        }
+        pairIds.push(String(inserted.data.id));
+      }
+    }
+
+    const snapshotUpdate = await supabase
+      .from('tournaments')
+      .update({ pre_pairs_state: snapshot, budget: getDefaultBudgetForFormat('mpo_pairs') })
+      .eq('id', activeTournament.id);
+    if (snapshotUpdate.error) {
+      alert('Palautussnapshotin tallennus epäonnistui: ' + formatSupabaseErr(snapshotUpdate.error));
+      return;
+    }
+
+    const deactivate = await supabase
+      .from('players')
+      .update({ is_active: false })
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+    if (deactivate.error) {
+      alert('Vanhan kentän deaktivointi epäonnistui: ' + formatSupabaseErr(deactivate.error));
+      return;
+    }
+    const activate = await supabase.from('players').update({ is_active: true }).in('id', pairIds);
+    if (activate.error) {
+      alert('Parien aktivointi epäonnistui: ' + formatSupabaseErr(activate.error));
+      return;
+    }
+
+    await loadData();
+    alert(`${pairIds.length} paria tuotu pelaajatorille.`);
+  }
+
+  async function restoreSinglesMode() {
+    if (!activeTournament?.id || !isMpoPairsTournament(activeTournament)) return;
+    const activePairPicks = allTeamsPicks.filter(
+      (pick: any) => String(pick.tournament_id ?? '') === String(activeTournament.id)
+    );
+    const warning =
+      activePairPicks.length > 0
+        ? ` Tämä poistaa ${activePairPicks.length} tallennettua parivalintaa.`
+        : '';
+    if (!confirm(`Palautetaanko normaali singles-tila?${warning}`)) return;
+
+    if (activePairPicks.length > 0) {
+      const deleted = await supabase.from('picks').delete().eq('tournament_id', activeTournament.id);
+      if (deleted.error) {
+        alert('Parivalintojen poisto epäonnistui: ' + formatSupabaseErr(deleted.error));
+        return;
+      }
+    }
+
+    const deactivatePairs = await supabase
+      .from('players')
+      .update({ is_active: false })
+      .not('pair_members', 'is', null);
+    if (deactivatePairs.error) {
+      alert('Parien deaktivointi epäonnistui: ' + formatSupabaseErr(deactivatePairs.error));
+      return;
+    }
+
+    const snapshot = activeTournament.pre_pairs_state;
+    const restoreIds = Array.isArray(snapshot?.active_player_ids)
+      ? snapshot.active_player_ids.map(String).filter(Boolean)
+      : [];
+    if (restoreIds.length > 0) {
+      const restorePlayers = await supabase.from('players').update({ is_active: true }).in('id', restoreIds);
+      if (restorePlayers.error) {
+        alert('Singles-pelaajien palautus epäonnistui: ' + formatSupabaseErr(restorePlayers.error));
+        return;
+      }
+    }
+
+    const budget =
+      Number.isFinite(Number(snapshot?.budget)) && Number(snapshot.budget) > 0
+        ? Math.round(Number(snapshot.budget))
+        : DEFAULT_BUDGET;
+    const restored = await supabase
+      .from('tournaments')
+      .update({ format: 'singles', budget, pre_pairs_state: null })
+      .eq('id', activeTournament.id);
+    if (restored.error) {
+      alert('Turnausmuodon palautus epäonnistui: ' + formatSupabaseErr(restored.error));
+      return;
+    }
+
+    draftHydratedKeyRef.current = null;
+    await loadData();
+    alert('Normaali singles-tila palautettu.');
   }
 
   async function persistPlayerStats(
@@ -875,7 +1144,7 @@ export default function Home() {
 
   function selectDraftPlayer(pId: string, rating: number) {
     if (tournamentLocked) return alert("Turnaus on lukittu!");
-    if (draftTeam.length >= 5) return alert("Tiimi on täynnä!");
+    if (draftTeam.length >= rosterSize) return alert("Tiimi on täynnä!");
     if (draftTeam.some((pick) => pick.player_id === pId)) return;
     const pl = players.find((p: any) => p.id === pId);
     const price = getPlayerMarketPrice({
@@ -906,7 +1175,11 @@ export default function Home() {
     if (tournamentLocked) return alert("Turnaus on lukittu!");
     if (!activeTournament?.id) return alert("Aktiivista turnausta ei löytynyt.");
     if (!user?.id) return alert("Kirjaudu sisään tallentaaksesi joukkueen.");
-    if (draftTeam.length !== 5) return alert("Valitse täsmälleen 5 pelaajaa ennen tallennusta.");
+    if (draftTeam.length !== rosterSize) {
+      return alert(
+        `Valitse täsmälleen ${rosterSize} ${entityLabels.plural} ennen tallennusta.`
+      );
+    }
 
     const payload = draftTeam.map((pick: any) => ({
       player_id: pick.player_id,
@@ -1052,7 +1325,9 @@ export default function Home() {
     activeTournament?.season_segment != null && Number.isFinite(Number(activeTournament.season_segment))
       ? Number(activeTournament.season_segment)
       : 1;
-  const playerTournamentRows = buildPlayerTournamentRows(players);
+  const playerTournamentRows = buildPlayerTournamentRows(players, {
+    pairsOnly: tournamentFormat === 'mpo_pairs',
+  });
   const playerSeasonRows = buildPlayerSeasonRows(historyForDisplay, players, {
     name: activeTournamentNameForStats,
     seasonSegment: activeSeasonSegment,
@@ -1142,12 +1417,13 @@ export default function Home() {
       m.set(playerName, (m.get(playerName) || 0) + pts);
     };
     historyForDisplay.forEach((row: any) => {
-      if (isArchiveFieldSnapshotRow(row)) return;
+      if (isArchiveFieldSnapshotRow(row) || isPairHistoryRow(row)) return;
       const name = row.player_name;
       if (!name) return;
       addPtsHof(teamKeyFromHistoryRowHof(row), name, Number(row.earned_points) || 0);
     });
     picksForActiveTournament.forEach((pick: any) => {
+      if (isPairPlayer(pick.players)) return;
       const uid = pick.user_id;
       if (!uid) return;
       const name = pick.players?.name;
@@ -1185,6 +1461,7 @@ export default function Home() {
       });
     };
     historyForDisplay.forEach((row: any) => {
+      if (isPairHistoryRow(row)) return;
       const name = row.player_name;
       if (!name) return;
       const pts = Number(row.earned_points) || 0;
@@ -1250,7 +1527,7 @@ export default function Home() {
 
     const popularity = new Map<string, Set<string>>();
     historyForDisplay.forEach((row: any) => {
-      if (isArchiveFieldSnapshotRow(row)) return;
+      if (isArchiveFieldSnapshotRow(row) || isPairHistoryRow(row)) return;
       const playerName = row.player_name;
       if (!playerName) return;
       const b = historySeasonBucket(row);
@@ -1261,6 +1538,7 @@ export default function Home() {
     });
     // Nykykisa mukana laskennassa aina → lukituksella näkyvä tulos on ajantasainen (ei jää vain historiaan).
     picksForActiveTournament.forEach((pick: any) => {
+      if (isPairPlayer(pick.players)) return;
       const playerName = pick.players?.name;
       if (!playerName) return;
       const managerKey = popularityManagerKeyFromPick(pick);
@@ -1312,6 +1590,7 @@ export default function Home() {
 
     const tournamentPar = new Map<string, { sum: number; count: number }>();
     historyForDisplay.forEach((row: any) => {
+      if (isPairHistoryRow(row)) return;
       const b = historySeasonBucket(row);
       const p = Number(row.player_score);
       if (Number.isNaN(p)) return;
@@ -1449,6 +1728,11 @@ export default function Home() {
     openPlayerId != null
       ? players.find((p: any) => String(p?.id ?? "") === String(openPlayerId))
       : null;
+  const activeMarketPlayers = players.filter(
+    (player: any) =>
+      player?.is_active &&
+      (tournamentFormat === 'mpo_pairs' ? isPairPlayer(player) : !isPairPlayer(player))
+  );
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6">
@@ -1551,15 +1835,17 @@ export default function Home() {
           activeTournament={activeTournament}
           updateTournamentName={updateTournamentName}
           updateTournamentRoundParStrokes={updateTournamentRoundParStrokes}
-          players={players.filter(p => p.is_active)}
-          allPlayersForArchive={players}
-          history={history}
+          players={activeMarketPlayers}
+          allPlayersForArchive={players.filter((player: any) => !isPairPlayer(player))}
+          history={history.filter((row: any) => !isPairHistoryRow(row))}
           refreshData={loadData}
           adminSearch={adminSearch}
           setAdminSearch={setAdminSearch}
           handleRatingImport={handleRatingImport}
+          handleDoublesFieldImport={handleDoublesFieldImport}
           importResultsFromCsvFile={importResultsFromCsvFile}
           startNewTournament={startNewTournament}
+          restoreSinglesMode={restoreSinglesMode}
           toggleTournamentLock={toggleTournamentLock}
           updateTournamentLockSchedule={updateTournamentLockSchedule}
           updateTournamentBudget={updateTournamentBudget}
@@ -1573,7 +1859,7 @@ export default function Home() {
 
       {mainTab === 'market' && (
         <PlayerMarket
-          players={players.filter(p => p.is_active)}
+          players={activeMarketPlayers}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           team={draftTeam}
@@ -1588,6 +1874,8 @@ export default function Home() {
           teamLogoPath={teamLogoPath}
           teamLogoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
           teamDisplayName={teamDisplayName}
+          rosterSize={rosterSize}
+          isPairsMode={tournamentFormat === 'mpo_pairs'}
         />
       )}
 
@@ -1709,6 +1997,8 @@ export default function Home() {
             teamDisplayName={teamDisplayName}
             teamLogoPath={teamLogoPath}
             teamLogoId={profiles.find((p: any) => p.id === user.id)?.team_logo_id ?? null}
+            rosterSize={rosterSize}
+            isPairsMode={tournamentFormat === 'mpo_pairs'}
           />
         </section>
       )}
@@ -1731,6 +2021,7 @@ export default function Home() {
             players={players}
             getPrice={getPrice}
             getPickPoints={getPickPoints}
+            isPairsMode={tournamentFormat === 'mpo_pairs'}
           />
         </section>
       )}
@@ -1759,8 +2050,18 @@ export default function Home() {
                     <h3 className="pm-name">Joukkueen rakenne</h3>
                   </div>
                   <ul className="pm-rules-list">
-                    <li>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</li>
-                    <li>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</li>
+                    {tournamentFormat === 'mpo_pairs' ? (
+                      <>
+                        <li>Joukkueeseen valitaan 3 MPO-paria 600 000 € budjetilla.</li>
+                        <li>Yksi pari on yksi valinta ja saa yhteisen kilpailutuloksen pisteet vain kerran.</li>
+                        <li>Parin hinta perustuu pelaajien keskiarvoratingiin; HeimBuhrg maksaa 285 000 €.</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</li>
+                        <li>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</li>
+                      </>
+                    )}
                   </ul>
                 </article>
 

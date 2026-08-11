@@ -3,6 +3,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ARCHIVE_HOT_HIO_AUX_TEAM_NAME } from '../../lib/archiveDisplay';
 import { supabase } from '../../lib/supabase';
 import { isTournamentEffectivelyLocked, lockAtToDatetimeLocalValue, datetimeLocalValueToLockAtIso, formatLockAtFi } from '../../lib/tournamentLocked';
+import { pairMembersFromPlayer } from '../../lib/pairEntry';
+import {
+  getDefaultBudgetForFormat,
+  isMpoPairsTournament,
+  type TournamentFormat,
+} from '../../lib/tournamentRules';
 
 interface AdminPanelProps {
   activeTournament: any;
@@ -15,8 +21,10 @@ interface AdminPanelProps {
   adminSearch: string;
   setAdminSearch: (val: string) => void;
   handleRatingImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleDoublesFieldImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
   importResultsFromCsvFile: (file: File) => void | Promise<void>;
-  startNewTournament: () => void;
+  startNewTournament: (nextFormat: TournamentFormat) => void;
+  restoreSinglesMode: () => void | Promise<void>;
   toggleTournamentLock: () => void;
   updateTournamentLockSchedule: (lockAtIso: string | null) => void | Promise<void>;
   updateTournamentBudget: (budget: number) => void | Promise<void>;
@@ -78,8 +86,10 @@ export default function AdminPanel({
   adminSearch,
   setAdminSearch,
   handleRatingImport,
+  handleDoublesFieldImport,
   importResultsFromCsvFile,
   startNewTournament,
+  restoreSinglesMode,
   toggleTournamentLock,
   updateTournamentLockSchedule,
   updateTournamentBudget,
@@ -94,9 +104,12 @@ export default function AdminPanel({
   const resultsCsvRef = useRef<HTMLInputElement>(null);
   const tournamentId = activeTournament?.id;
   const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
+  const pairsMode = isMpoPairsTournament(activeTournament);
   const DEFAULT_BUDGET = 1_000_000;
+  const formatDefaultBudget = getDefaultBudgetForFormat(pairsMode ? 'mpo_pairs' : 'singles');
   const [lockScheduleInput, setLockScheduleInput] = useState('');
   const [budgetInput, setBudgetInput] = useState(String(DEFAULT_BUDGET));
+  const [nextTournamentFormat, setNextTournamentFormat] = useState<TournamentFormat>('singles');
   const [, setScheduleTick] = useState(0);
 
   useEffect(() => {
@@ -108,6 +121,11 @@ export default function AdminPanel({
     const budget = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_BUDGET;
     setBudgetInput(String(budget));
   }, [activeTournament?.budget, activeTournament?.id]);
+
+  // Uuden kisan jälkeen formaattivalinta palaa aina normaaliin oletukseen.
+  useEffect(() => {
+    setNextTournamentFormat('singles');
+  }, [activeTournament?.season_segment, activeTournament?.id]);
 
   useEffect(() => {
     const lockAt = activeTournament?.lock_at;
@@ -893,23 +911,58 @@ export default function AdminPanel({
         
         <div style={styles.buttonGroup}>
           <input type="file" accept=".csv" onChange={handleRatingImport} id="csv-upload" style={{ display: 'none' }} />
+          <input
+            type="file"
+            accept=".csv,.txt,text/csv"
+            onChange={handleDoublesFieldImport}
+            id="doubles-csv-upload"
+            style={{ display: 'none' }}
+          />
           
           <button 
             onClick={() => document.getElementById('csv-upload')?.click()} 
             className="bp-tab"
+            disabled={pairsMode}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
             Rating CSV
           </button>
+
+          {pairsMode && (
+            <button
+              onClick={() => document.getElementById('doubles-csv-upload')?.click()}
+              className="bp-tab"
+            >
+              Doubles-kenttä CSV
+            </button>
+          )}
+
+          <select
+            value={nextTournamentFormat}
+            onChange={(event) => setNextTournamentFormat(event.target.value as TournamentFormat)}
+            className="bp-input"
+            aria-label="Seuraavan kisan muoto"
+            title="Seuraavan kisan muoto"
+            style={{ minWidth: '170px' }}
+          >
+            <option value="singles">Seuraava: normaali</option>
+            <option value="mpo_pairs">Seuraava: MPO-parit</option>
+          </select>
           
-          <button onClick={startNewTournament} className="bp-btn-primary">
+          <button onClick={() => startNewTournament(nextTournamentFormat)} className="bp-btn-primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 4v16m8-8H4" />
             </svg>
             Uusi kisa
           </button>
+
+          {pairsMode && (
+            <button onClick={() => void restoreSinglesMode()} className="bp-btn-danger">
+              Palauta singles
+            </button>
+          )}
           
           <button
             onClick={toggleTournamentLock}
@@ -957,10 +1010,22 @@ export default function AdminPanel({
           <span style={{ fontFamily: 'ui-monospace, monospace' }}>season_segment</span> +1). Tyhjä rosteri = tämä polku.
         </p>
         <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Kisamuoto:</strong>{' '}
+          {pairsMode ? 'MPO-parikisa — 3 paria ja 600 000 €.' : 'Normaali kisa — 5 pelaajaa.'}{' '}
+          Uuden kisan valinta koskee aina seuraavaa kilpailua ja oletuksena on normaali kisa.
+        </p>
+        <p style={{ margin: '0 0 8px' }}>
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Rating CSV</strong> — rivit{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.95)' }}>nimi;PDGA;rating</span>
           (toinen sarake voi olla tyhjä: PDGA-kenttää ei silloin päivitetä). Kolmas sarake on rating kuten ennen.
         </p>
+        {pairsMode && (
+          <p style={{ margin: '0 0 8px' }}>
+            <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Doubles-kenttä CSV:</strong> A = joukkueen nimi
+            ensimmäisellä rivillä, B = pelaajan nimi, C = rating ja D–F = paikkatiedot. Tyhjä A liittää toisen
+            pelaajan edelliseen joukkueeseen. Otsikoiden nimiä ei käytetä.
+          </p>
+        )}
         <p
           style={{
             margin: 0,
@@ -1032,7 +1097,7 @@ export default function AdminPanel({
           <label style={styles.label}>Pelaajabudjetti</label>
         </div>
         <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
-          Kassakatto euroina tälle kisalle (oletus {DEFAULT_BUDGET.toLocaleString('fi-FI')} €). Uuden kisan aloituksessa budjetti palautuu oletukseen.
+          Kassakatto euroina tälle kisalle (oletus {formatDefaultBudget.toLocaleString('fi-FI')} €). Uuden kisan aloituksessa budjetti palautuu valitun kisamuodon oletukseen.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', maxWidth: '520px' }}>
           <input
@@ -1066,8 +1131,8 @@ export default function AdminPanel({
             className="bp-tab"
             disabled={!tournamentId}
             onClick={() => {
-              setBudgetInput(String(DEFAULT_BUDGET));
-              void updateTournamentBudget(DEFAULT_BUDGET);
+              setBudgetInput(String(formatDefaultBudget));
+              void updateTournamentBudget(formatDefaultBudget);
             }}
           >
             Palauta oletus
@@ -1514,7 +1579,7 @@ export default function AdminPanel({
         </svg>
         <input 
           type="text" 
-          placeholder="Etsi pelaajaa nimellä..." 
+          placeholder={pairsMode ? 'Etsi paria nimellä...' : 'Etsi pelaajaa nimellä...'}
           value={adminSearch} 
           onChange={e => setAdminSearch(e.target.value)} 
           style={styles.searchInput}
@@ -1527,7 +1592,7 @@ export default function AdminPanel({
           <table style={styles.table}>
             <thead style={styles.thead}>
               <tr>
-                <th style={styles.th}>Pelaaja</th>
+                <th style={styles.th}>{pairsMode ? 'Pari' : 'Pelaaja'}</th>
                 <th style={styles.thCenter} title="PDGA player number">
                   PDGA
                 </th>
@@ -1538,7 +1603,9 @@ export default function AdminPanel({
               </tr>
             </thead>
             <tbody>
-              {players.filter(p => p.name.toLowerCase().includes(adminSearch.toLowerCase())).sort((a,b) => a.name.localeCompare(b.name)).map(p => (
+              {players.filter(p => p.name.toLowerCase().includes(adminSearch.toLowerCase())).sort((a,b) => a.name.localeCompare(b.name)).map(p => {
+                const pairMembers = pairMembersFromPlayer(p);
+                return (
                 <tr key={`${p.id}-${p.par_score}-${p.rounds_played}-${p.pdga_number ?? ''}`} style={styles.tr}>
                   <td style={styles.td}>
                     <div style={styles.playerCell}>
@@ -1548,6 +1615,11 @@ export default function AdminPanel({
                       <div>
                         <span style={styles.playerName}>{p.name}</span>
                         <span style={styles.ratingBadge}>{p.official_rating}</span>
+                        {pairMembers.length === 2 && (
+                          <span style={{ display: 'block', marginTop: '3px', fontSize: '11px', color: 'rgba(255,255,255,0.48)' }}>
+                            {pairMembers.map((member) => `${member.name} (${member.rating})`).join(' · ')}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -1559,6 +1631,7 @@ export default function AdminPanel({
                       autoComplete="off"
                       placeholder="—"
                       title="PDGA-numero"
+                      disabled={pairMembers.length === 2}
                       style={styles.pdgaInput}
                     />
                   </td>
@@ -1640,7 +1713,7 @@ export default function AdminPanel({
                     </button>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
@@ -1648,7 +1721,10 @@ export default function AdminPanel({
       
       {/* Footer Stats */}
       <div style={styles.footer}>
-        <span>{players.filter(p => p.name.toLowerCase().includes(adminSearch.toLowerCase())).length} pelaajaa</span>
+        <span>
+          {players.filter(p => p.name.toLowerCase().includes(adminSearch.toLowerCase())).length}{' '}
+          {pairsMode ? 'paria' : 'pelaajaa'}
+        </span>
         <div style={styles.statusRow}>
           <div style={styles.statusDot(tournamentLocked)} />
           <span>{tournamentLocked ? 'Turnaus lukittu' : 'Turnaus käynnissä'}</span>

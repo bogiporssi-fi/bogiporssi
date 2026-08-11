@@ -34,6 +34,7 @@ interface LeaderboardsProps {
   players: any[];
   getPrice: (rating: number, playerName?: string | null) => number;
   getPickPoints: (pick: any) => number;
+  isPairsMode?: boolean;
 }
 
 function formatMoneyFi(n: number) {
@@ -304,16 +305,21 @@ export default function Leaderboards({
   players,
   getPrice,
   getPickPoints,
+  isPairsMode = false,
 }: LeaderboardsProps) {
   const subTeams =
     tab === "tournament"
-      ? "Fantasy-joukkueet: managerit joilla on tallennettuja valintoja tähän kisaan (picks). Ei sama kuin Pelaajat-välilehti."
+      ? isPairsMode
+        ? "Fantasy-joukkueet: managerit joilla on tallennettuja parivalintoja tähän kisaan (picks)."
+        : "Fantasy-joukkueet: managerit joilla on tallennettuja valintoja tähän kisaan (picks). Ei sama kuin Pelaajat-välilehti."
       : "Kausi: 3 huonointa kisaa pudotetaan joukkuekohtaisesti. Sijoitus ja pääpisteet = pudotuksin; kaikki kisat näkyy erikseen.";
 
   const subPlayers =
     tab === "tournament"
-      ? "Kentän pelaajat (pelaajatori) — jokaisen tulos tästä kisasta (pisteet pelaajakortilta)."
-      : "Kausi: arkistoidut kisat + nykyisen kisan tulos; kentällä olevat näkyvät myös nollapisteinä.";
+      ? isPairsMode
+        ? "Kentän MPO-parit — jokaisen parin yhteinen tulos tästä kisasta."
+        : "Kentän pelaajat (pelaajatori) — jokaisen tulos tästä kisasta (pisteet pelaajakortilta)."
+      : "Kausi: arkistoidut yksittäispelaajien kisat + nykyisen kisan tulos; doubles-parit eivät kuulu tähän listaan.";
 
   const sub = boardMode === "teams" ? subTeams : subPlayers;
 
@@ -358,7 +364,7 @@ export default function Leaderboards({
               onClick={() => setBoardMode("players")}
               className={["bp-tab", boardMode === "players" ? "bp-tab-active" : ""].join(" ")}
             >
-              Pelaajat
+              {isPairsMode && tab === "tournament" ? "Parit" : "Pelaajat"}
             </button>
           </div>
           <div className="bp-subtab-row">

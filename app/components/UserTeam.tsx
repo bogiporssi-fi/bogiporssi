@@ -5,6 +5,7 @@ import { breakdownFromPlayerRow } from "../../lib/pointsBreakdown";
 import PlayerPointsBreakdownPanel from "./PlayerPointsBreakdownPanel";
 import TeamLogo from "./TeamLogo";
 import TeamRoundTotalsStrip from "./TeamRoundTotalsStrip";
+import { pairMembersFromPlayer } from "../../lib/pairEntry";
 
 interface UserTeamProps {
   team: any[];
@@ -14,6 +15,8 @@ interface UserTeamProps {
   teamDisplayName: string;
   teamLogoPath?: string | null;
   teamLogoId?: string | null;
+  rosterSize: number;
+  isPairsMode: boolean;
 }
 
 function formatMoneyFi(n: number) {
@@ -35,6 +38,8 @@ export default function UserTeam({
   teamDisplayName,
   teamLogoPath,
   teamLogoId,
+  rosterSize,
+  isPairsMode,
 }: UserTeamProps) {
   const minPrice = getPrice(950);
   return (
@@ -44,7 +49,9 @@ export default function UserTeam({
           <TeamLogo logoPath={teamLogoPath} logoId={teamLogoId} fallbackName={teamDisplayName} size="md" />
           <div className="min-w-0">
             <h2 className="pm-title">{teamDisplayName}</h2>
-            <p className="pm-sub">{team.length}/5 pelaajaa valittu</p>
+            <p className="pm-sub">
+              {team.length}/{rosterSize} {isPairsMode ? "paria" : "pelaajaa"} valittu
+            </p>
           </div>
         </div>
       </div>
@@ -57,12 +64,13 @@ export default function UserTeam({
         )}
         {team.length === 0 && (
           <div className="col-span-full rounded-[10px] border border-dashed border-white/15 bg-white/[0.03] p-5 text-center text-sm text-white/55 backdrop-blur">
-            Tiimisi on tyhjä. Osta pelaajia Pelaajatorista.
+            {isPairsMode ? "Tiimisi on tyhjä. Osta pareja Paritorilta." : "Tiimisi on tyhjä. Osta pelaajia Pelaajatorista."}
           </div>
         )}
 
         {team.map((pick: any) => {
           const name = pick.players?.name || "…";
+          const pairMembers = pairMembersFromPlayer(pick.players);
           const rawRating = pick.players?.official_rating;
           const rating =
             rawRating !== null && rawRating !== undefined && rawRating !== ""
@@ -120,6 +128,15 @@ export default function UserTeam({
                   )}
                 </div>
               </div>
+              {pairMembers.length === 2 && (
+                <div className="mt-2 text-xs text-white/55">
+                  {pairMembers.map((member) => (
+                    <span key={member.name} className="mr-3 inline-block">
+                      {member.name} <span className="text-white/35">({member.rating})</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               {breakdown && (
                 <PlayerPointsBreakdownPanel
                   breakdown={breakdown}

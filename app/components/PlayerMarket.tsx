@@ -2,6 +2,7 @@
 import React, { useMemo } from "react";
 import TeamLogo from "./TeamLogo";
 import { parseTeamLogoId } from "../../lib/teamLogos";
+import { pairMembersFromPlayer } from "../../lib/pairEntry";
 
 interface PlayerMarketProps {
   players: any[];
@@ -19,6 +20,8 @@ interface PlayerMarketProps {
   teamLogoPath?: string | null;
   teamLogoId?: string | null;
   teamDisplayName: string;
+  rosterSize: number;
+  isPairsMode: boolean;
 }
 
 /** Fi-locale käyttää välilyöntejä tuhaterottimina — vaihdetaan sitovat välilyönnit ettei numero hajoa kahdelle riville */
@@ -49,12 +52,15 @@ export default function PlayerMarket({
   teamLogoPath,
   teamLogoId,
   teamDisplayName,
+  rosterSize,
+  isPairsMode,
 }: PlayerMarketProps) {
   const minPrice = getPrice(950);
   const showTeamLogo = Boolean(teamLogoPath || parseTeamLogoId(teamLogoId));
-  const filteredPlayers = players.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPlayers = players.filter((p) => {
+    const pairNames = pairMembersFromPlayer(p).map((member) => member.name).join(" ");
+    return `${p.name} ${pairNames}`.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   /** Lasketaan tästä näkymästä: buy_price tallessa valinnoissa, muuten hinta ratingista */
   const spent = useMemo(() => {
@@ -69,7 +75,7 @@ export default function PlayerMarket({
   const over = spent > displayBudget;
   const fillPct = over ? 100 : Math.min(100, Math.max(0, (spent / displayBudget) * 100));
   const remaining = Math.max(0, displayBudget - spent);
-  const isReadyToSave = team.length === 5 && !isLocked;
+  const isReadyToSave = team.length === rosterSize && !isLocked;
   const savedPlayerIds = new Set(savedTeam.map((p) => p.player_id));
   const draftPlayerIds = new Set(team.map((p) => p.player_id));
   const hasUnsavedChanges =
@@ -99,8 +105,10 @@ export default function PlayerMarket({
       )}
       <div className="pm-toolbar pm-toolbar--market">
         <div className="min-w-0">
-          <h2 className="pm-title">Pelaajatori</h2>
-          <p className="pm-sub">Etsi ja osta pelaajia joukkueeseen.</p>
+          <h2 className="pm-title">{isPairsMode ? "Paritori" : "Pelaajatori"}</h2>
+          <p className="pm-sub">
+            {isPairsMode ? "Etsi ja osta pareja joukkueeseen." : "Etsi ja osta pelaajia joukkueeseen."}
+          </p>
         </div>
         <div className="pm-input-wrap">
           <input
@@ -116,13 +124,13 @@ export default function PlayerMarket({
       <div className="pm-card pm-card--stack pm-market-draft-card">
         <div className="pm-market-draft-head">
           <div className="min-w-0 flex-1">
-            <h3 className="pm-name">Joukkue luonnos ({team.length}/5)</h3>
+            <h3 className="pm-name">Joukkue luonnos ({team.length}/{rosterSize})</h3>
             <p className="pm-sub">
               {isLocked
                 ? "Turnaus on lukittu: luonnosta ei voi muokata tai tallentaa."
                 : isReadyToSave
                   ? "Valmis tallennettavaksi."
-                  : "Valitse 5/5 pelaajaa tallentaaksesi."}
+                  : `Valitse ${rosterSize}/${rosterSize} ${isPairsMode ? "paria" : "pelaajaa"} tallentaaksesi.`}
             </p>
           </div>
           <button
@@ -130,7 +138,11 @@ export default function PlayerMarket({
             onClick={onSave}
             disabled={!isReadyToSave}
             className={["bp-btn-primary", !isReadyToSave ? "cursor-not-allowed opacity-40" : ""].join(" ")}
-            title={!isReadyToSave ? "Tallennus vaatii täsmälleen 5 pelaajaa" : undefined}
+            title={
+              !isReadyToSave
+                ? `Tallennus vaatii täsmälleen ${rosterSize} ${isPairsMode ? "paria" : "pelaajaa"}`
+                : undefined
+            }
           >
             Tallenna
           </button>
@@ -220,9 +232,10 @@ export default function PlayerMarket({
         {filteredPlayers
           .sort((a, b) => b.official_rating - a.official_rating)
           .map((p) => {
+            const pairMembers = pairMembersFromPlayer(p);
             const isPicked = team.some((t) => t.player_id === p.id);
             const price = getPrice(p.official_rating, p.name);
-            const teamFull = team.length >= 5;
+            const teamFull = team.length >= rosterSize;
             const tooExpensive = !isPicked && price > remaining;
             const cannotBuy = isLocked || teamFull || tooExpensive;
             return (
@@ -294,7 +307,7 @@ export default function PlayerMarket({
                         tooExpensive
                           ? "Pelaaja on kalliimpi kuin jäljellä oleva budjetti"
                           : teamFull
-                            ? "Joukkue täynnä (5/5)"
+                            ? `Joukkue täynnä (${rosterSize}/${rosterSize})`
                             : undefined
                       }
                       className={[
@@ -306,6 +319,15 @@ export default function PlayerMarket({
                     </button>
                   )}
                 </div>
+                {pairMembers.length === 2 && (
+                  <div className="mt-2 border-t border-white/5 pt-2 text-xs text-white/55">
+                    {pairMembers.map((member) => (
+                      <span key={member.name} className="mr-3 inline-block">
+                        {member.name} <span className="text-white/35">({member.rating})</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </article>
             );
           })}

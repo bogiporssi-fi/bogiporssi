@@ -28,6 +28,11 @@ function removeSupabaseAuthKeys(storage: Storage) {
 
 /** Tyhjentää paikallisen sessionin ilman server-kutsua (toimii kun refresh on jo rikki). */
 export async function recoverFromStaleSupabaseAuth(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    // Poista rikkoutuneet avaimet ensin, jotta signOut ei yritä uutta refresh-kutsua.
+    removeSupabaseAuthKeys(localStorage)
+    removeSupabaseAuthKeys(sessionStorage)
+  }
   try {
     await supabase.auth.signOut({ scope: 'local' })
   } catch {

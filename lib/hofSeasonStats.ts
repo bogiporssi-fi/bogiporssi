@@ -1,4 +1,5 @@
 import { historySeasonBucket } from './seasonSegment';
+import { isPairHistoryRow, isPairPlayer } from './pairEntry';
 
 /**
  * Hot / HIO koko kaudelle: per arkisto-osa (bucket) pelaajan max (sama arvo usealla rivillä),
@@ -10,6 +11,7 @@ function aggregatePerPlayerFromHistory(
 ): Map<string, number> {
   const maxInBucket = new Map<string, Map<string, number>>();
   for (const row of history) {
+    if (isPairHistoryRow(row)) continue;
     const name = row.player_name;
     if (!name) continue;
     const raw = row[field];
@@ -31,7 +33,7 @@ function aggregatePerPlayerFromHistory(
 export function seasonHotTotalsByPlayerName(history: any[], players: any[]): Map<string, number> {
   const season = aggregatePerPlayerFromHistory(history, 'hot_rounds');
   for (const p of players) {
-    if (!p?.is_active) continue;
+    if (!p?.is_active || isPairPlayer(p)) continue;
     const name = String(p.name || '').trim();
     if (!name) continue;
     const add = Number(p.hot_rounds) || 0;
@@ -44,7 +46,7 @@ export function seasonHotTotalsByPlayerName(history: any[], players: any[]): Map
 export function seasonHioTotalsByPlayerName(history: any[], players: any[]): Map<string, number> {
   const season = aggregatePerPlayerFromHistory(history, 'hio_count');
   for (const p of players) {
-    if (!p?.is_active) continue;
+    if (!p?.is_active || isPairPlayer(p)) continue;
     const name = String(p.name || '').trim();
     if (!name) continue;
     const add = Number(p.hio_count) || 0;
