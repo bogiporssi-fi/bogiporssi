@@ -5,7 +5,7 @@ import {
   dedupePlayersOncePerTeamRoster,
   mergeTournamentResultPages,
   tournamentResultsOrderParam,
-} from './tournamentResultRows';
+} from './tournamentResultRows.ts';
 
 type Row = {
   id?: string;
