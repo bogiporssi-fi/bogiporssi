@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from 'react';
 import { isRefreshTokenAuthError, recoverFromStaleSupabaseAuth, supabase } from '../lib/supabase';
 import { fetchAllTournamentResults } from '../lib/fetchTournamentResults';
+import { dedupePlayersOncePerTeamRoster } from '../lib/tournamentResultRows';
 import AdminPanel from './components/AdminPanel';
 import PlayerMarket from './components/PlayerMarket';
 import PlayerCard from './components/PlayerCard';
@@ -1315,8 +1316,12 @@ export default function Home() {
         )
       : [];
 
-  /** Ei näytetä tuloksissa / historiassa — vain HoF hot/hio -laskenta (lisätty Administa). Kenttätulosrivit mukana pelaajakausi-laskennassa. */
-  const historyForDisplay = historyRowsForDisplay(history);
+  /**
+   * Ei näytetä tuloksissa / historiassa — vain HoF hot/hio -laskenta (lisätty Administa).
+   * Kenttätulosrivit mukana pelaajakausi-laskennassa.
+   * Sama pelaaja kerran per (kisa, season_segment, manageri), jotta rosteri ja pisteet eivät tuplaannu.
+   */
+  const historyForDisplay = dedupePlayersOncePerTeamRoster(historyRowsForDisplay(history));
   /** Kisa-arkisto / joukkueiden näkymät: ei kenttäsnapshot-rivejä (ei fantasy-valintaa). */
   const historyForFantasyArchiveUi = historyForDisplay.filter((row) => !isArchiveFieldSnapshotRow(row));
 
