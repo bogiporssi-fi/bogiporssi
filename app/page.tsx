@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isRefreshTokenAuthError, recoverFromStaleSupabaseAuth, supabase } from '../lib/supabase';
 import { fetchAllTournamentResults } from '../lib/fetchTournamentResults';
 import { dedupePlayersOncePerTeamRoster } from '../lib/tournamentResultRows';
@@ -32,7 +32,13 @@ import { buildPlayerSeasonRows, buildPlayerTournamentRows } from '../lib/playerS
 import { buildTeamSeasonBoard, TEAM_LEGACY_PREFIX } from '../lib/seasonScoring';
 import { ADMIN_EMAIL } from '../lib/adminEmail';
 import { isTournamentEffectivelyLocked } from '../lib/tournamentLocked';
-import { getPlayerMarketPrice, MIN_PLAYER_PRICE } from '../lib/playerPrice';
+import {
+  coerceOfficialRating,
+  fieldMarketPriceMap,
+  getPlayerMarketPrice,
+  marketPriceKey,
+  MIN_PLAYER_PRICE,
+} from '../lib/playerPrice';
 import { parsePdgaCsvMiddleColumn, parsePdgaNumberInput } from '../lib/pdga';
 import { decodeDoublesFieldCsv } from '../lib/doublesFieldImport';
 import { isPairHistoryRow, isPairPlayer } from '../lib/pairEntry';
@@ -40,8 +46,10 @@ import {
   getDefaultBudgetForFormat,
   getMarketEntityLabels,
   getTournamentFormat,
+  getTournamentPricingMode,
   getTournamentRosterSize,
   isMpoPairsTournament,
+  type PricingMode,
   type TournamentFormat,
 } from '../lib/tournamentRules';
 
@@ -55,11 +63,6 @@ function archiveEarnedPointsFromPlayer(player: any): number {
     Number(player.hio_count) * 20 +
     (Number(player.position_bonus) || 0)
   );
-}
-
-/** Markkinahinta: rating + valinnaiset kiinteät hinnat nimellä (ks. lib/playerPrice). */
-function getPrice(rating: number, playerName?: string | null) {
-  return getPlayerMarketPrice({ name: playerName ?? undefined, official_rating: rating });
 }
 
 function formatMoneyFi(n: number) {
@@ -156,9 +159,32 @@ export default function Home() {
   const rawBudget = Number(activeTournament?.budget);
   const BUDGET = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : DEFAULT_BUDGET;
   const tournamentFormat = getTournamentFormat(activeTournament);
+  const pricingMode = getTournamentPricingMode(activeTournament);
   const rosterSize = getTournamentRosterSize(activeTournament);
   const entityLabels = getMarketEntityLabels(activeTournament);
   const tournamentLocked = isTournamentEffectivelyLocked(activeTournament);
+  const activeMarketPlayers = useMemo(
+    () =>
+      players.filter(
+        (player: any) =>
+          player?.is_active &&
+          (tournamentFormat === 'mpo_pairs' ? isPairPlayer(player) : !isPairPlayer(player))
+      ),
+    [players, tournamentFormat]
+  );
+  const fieldPriceByKey = useMemo(
+    () => fieldMarketPriceMap(activeMarketPlayers, pricingMode),
+    [activeMarketPlayers, pricingMode]
+  );
+  const getPrice = useCallback(
+    (rating: number, playerName?: string | null) => {
+      const coerced = coerceOfficialRating(rating);
+      const fromField = fieldPriceByKey.get(marketPriceKey(playerName, coerced));
+      if (fromField != null) return fromField;
+      return getPlayerMarketPrice({ name: playerName ?? undefined, official_rating: coerced });
+    },
+    [fieldPriceByKey]
+  );
 
   // Päivitä näkymä kun ajastettu lukitus aktivoituu (ilman sivun uudelleenlatausta).
   useEffect(() => {
@@ -338,7 +364,10 @@ export default function Home() {
   }
   // --- ADMIN TOIMINNOT ---
 
-  async function startNewTournament(nextFormat: TournamentFormat = 'singles') {
+  async function startNewTournament(
+    nextFormat: TournamentFormat = 'singles',
+    nextPricingMode: PricingMode = 'absolute'
+  ) {
     if (!activeTournament) return;
 
     // Tarkistetaan nimen tilanne
@@ -350,8 +379,12 @@ export default function Home() {
     }
 
     const nextLabel = nextFormat === 'mpo_pairs' ? 'MPO-parikisa (3 paria / 600 000 €)' : 'normaali kisa';
+    const pricingLabel =
+      nextPricingMode === 'relative'
+        ? 'suhteellinen hinnoittelu (heikompi kenttä)'
+        : 'normaali hinnoittelu';
     const confirmStart = confirm(
-      `Arkistoidaanko kisa nimellä "${kisanNimi}" ja aloitetaanko seuraavaksi ${nextLabel}? ` +
+      `Arkistoidaanko kisa nimellä "${kisanNimi}" ja aloitetaanko seuraavaksi ${nextLabel} (${pricingLabel})? ` +
         'Tämä tyhjentää pelaajien pisteet ja kaikkien joukkueet.'
     );
 
@@ -362,6 +395,21 @@ export default function Home() {
         const m = (err?.message || '').toLowerCase();
         return m.includes(col) && (m.includes('column') || m.includes('schema') || m.includes('not exist'));
       };
+      let pricingModeDropped = false;
+      async function updateTournamentRow(payload: Record<string, unknown>) {
+        let error = (await supabase.from('tournaments').update(payload).eq('id', activeTournament.id)).error;
+        if (
+          error &&
+          missingColumnErr(error, 'pricing_mode') &&
+          Object.prototype.hasOwnProperty.call(payload, 'pricing_mode')
+        ) {
+          pricingModeDropped = true;
+          const rest = { ...payload };
+          delete rest.pricing_mode;
+          error = (await supabase.from('tournaments').update(rest).eq('id', activeTournament.id)).error;
+        }
+        return error;
+      }
 
       const archiveData: any[] = [];
       let picksRead = supabase.from('picks').select('*');
@@ -543,62 +591,46 @@ export default function Home() {
         );
       }
 
-      let tournamentErr = (
-        await supabase
-          .from('tournaments')
-          .update({
-            is_locked: false,
-            name: 'Uusi Turnaus',
-            season_segment: segmentEnding + 1,
-            lock_at: null,
-            budget: getDefaultBudgetForFormat(nextFormat),
-            format: nextFormat,
-            pre_pairs_state: nextPairsSnapshot,
-          })
-          .eq('id', activeTournament.id)
-      ).error;
+      let tournamentErr = await updateTournamentRow({
+        is_locked: false,
+        name: 'Uusi Turnaus',
+        season_segment: segmentEnding + 1,
+        lock_at: null,
+        budget: getDefaultBudgetForFormat(nextFormat),
+        format: nextFormat,
+        pricing_mode: nextPricingMode,
+        pre_pairs_state: nextPairsSnapshot,
+      });
       if (tournamentErr && missingColumnErr(tournamentErr, 'budget')) {
-        tournamentErr = (
-          await supabase
-            .from('tournaments')
-            .update({
-              is_locked: false,
-              name: 'Uusi Turnaus',
-              season_segment: segmentEnding + 1,
-              lock_at: null,
-              format: nextFormat,
-              pre_pairs_state: nextPairsSnapshot,
-            })
-            .eq('id', activeTournament.id)
-        ).error;
+        tournamentErr = await updateTournamentRow({
+          is_locked: false,
+          name: 'Uusi Turnaus',
+          season_segment: segmentEnding + 1,
+          lock_at: null,
+          format: nextFormat,
+          pricing_mode: nextPricingMode,
+          pre_pairs_state: nextPairsSnapshot,
+        });
       }
       if (tournamentErr && missingColumnErr(tournamentErr, 'season_segment')) {
-        tournamentErr = (
-          await supabase
-            .from('tournaments')
-            .update({
-              is_locked: false,
-              name: 'Uusi Turnaus',
-              lock_at: null,
-              budget: getDefaultBudgetForFormat(nextFormat),
-              format: nextFormat,
-              pre_pairs_state: nextPairsSnapshot,
-            })
-            .eq('id', activeTournament.id)
-        ).error;
+        tournamentErr = await updateTournamentRow({
+          is_locked: false,
+          name: 'Uusi Turnaus',
+          lock_at: null,
+          budget: getDefaultBudgetForFormat(nextFormat),
+          format: nextFormat,
+          pricing_mode: nextPricingMode,
+          pre_pairs_state: nextPairsSnapshot,
+        });
         if (tournamentErr && missingColumnErr(tournamentErr, 'budget')) {
-          tournamentErr = (
-            await supabase
-              .from('tournaments')
-              .update({
-                is_locked: false,
-                name: 'Uusi Turnaus',
-                lock_at: null,
-                format: nextFormat,
-                pre_pairs_state: nextPairsSnapshot,
-              })
-              .eq('id', activeTournament.id)
-          ).error;
+          tournamentErr = await updateTournamentRow({
+            is_locked: false,
+            name: 'Uusi Turnaus',
+            lock_at: null,
+            format: nextFormat,
+            pricing_mode: nextPricingMode,
+            pre_pairs_state: nextPairsSnapshot,
+          });
         }
       }
       if (tournamentErr) {
@@ -641,6 +673,12 @@ export default function Home() {
       }
 
       alert(`Kisa "${kisanNimi}" arkistoitu onnistuneesti!`);
+      if (pricingModeDropped) {
+        alert(
+          'Hinnoittelutapaa ei tallennettu, koska tietokannasta puuttuu sarake pricing_mode. ' +
+            'Aja migraatio 20261103_tournaments_pricing_mode.sql. Kisa käyttää normaalia rating-kaavaa.'
+        );
+      }
       draftHydratedKeyRef.current = null;
       setDraftTeam([]);
       setTeam([]);
@@ -1041,6 +1079,27 @@ export default function Home() {
     setActiveTournament({ ...activeTournament, budget: next });
   }
 
+  async function updateTournamentPricingMode(mode: PricingMode) {
+    if (!activeTournament?.id) return;
+    const next: PricingMode = mode === 'relative' ? 'relative' : 'absolute';
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ pricing_mode: next })
+      .eq('id', activeTournament.id);
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('pricing_mode')) {
+        alert(
+          'Hinnoittelutapaa ei voitu tallentaa. Aja Supabasessa migraatio 20261103_tournaments_pricing_mode.sql.'
+        );
+        return;
+      }
+      alert('Hinnoittelutavan tallennus epäonnistui: ' + formatSupabaseErr(error));
+      return;
+    }
+    setActiveTournament({ ...activeTournament, pricing_mode: next });
+  }
+
   // --- PELILOGIIKKA (Osto & Poisto) ---
 
   async function updateTeamName(newName: string) {
@@ -1148,10 +1207,7 @@ export default function Home() {
     if (draftTeam.length >= rosterSize) return alert("Tiimi on täynnä!");
     if (draftTeam.some((pick) => pick.player_id === pId)) return;
     const pl = players.find((p: any) => p.id === pId);
-    const price = getPlayerMarketPrice({
-      name: pl?.name,
-      official_rating: pl?.official_rating ?? rating,
-    });
+    const price = getPrice(Number(pl?.official_rating ?? rating) || 950, pl?.name);
     if (calculateTeamCost(draftTeam) + price > BUDGET) return alert("Budjetti ei riitä!");
     setDraftTeam((prev) => [
       ...prev,
@@ -1470,7 +1526,8 @@ export default function Home() {
       const name = row.player_name;
       if (!name) return;
       const pts = Number(row.earned_points) || 0;
-      // Uudemmissa arkistoissa buy_price on tallessa, vanhoissa arvioidaan ratingista
+      // Uudemmissa arkistoissa buy_price on tallessa. Vanhoissa arvioidaan rating-kaavasta:
+      // menneet kisat eivät käytä suhteellista hintaa, eikä pricing_modea ole arkistorivillä.
       const price = Number(row.buy_price) || getPlayerPriceByName(name);
       const prev = valueByPlayer.get(name) || { points: 0, price: 0 };
       valueByPlayer.set(name, { points: prev.points + pts, price: prev.price + price });
@@ -1733,11 +1790,6 @@ export default function Home() {
     openPlayerId != null
       ? players.find((p: any) => String(p?.id ?? "") === String(openPlayerId))
       : null;
-  const activeMarketPlayers = players.filter(
-    (player: any) =>
-      player?.is_active &&
-      (tournamentFormat === 'mpo_pairs' ? isPairPlayer(player) : !isPairPlayer(player))
-  );
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6">
@@ -1854,6 +1906,7 @@ export default function Home() {
           toggleTournamentLock={toggleTournamentLock}
           updateTournamentLockSchedule={updateTournamentLockSchedule}
           updateTournamentBudget={updateTournamentBudget}
+          updateTournamentPricingMode={updateTournamentPricingMode}
           picksRowCountForActiveTournament={picksForActiveTournament.length}
           allTeamsPicks={picksForActiveTournament}
           profiles={profiles}
@@ -1881,6 +1934,7 @@ export default function Home() {
           teamDisplayName={teamDisplayName}
           rosterSize={rosterSize}
           isPairsMode={tournamentFormat === 'mpo_pairs'}
+          relativePricing={pricingMode === 'relative'}
         />
       )}
 
@@ -2059,12 +2113,26 @@ export default function Home() {
                       <>
                         <li>Joukkueeseen valitaan 3 MPO-paria 600 000 € budjetilla.</li>
                         <li>Yksi pari on yksi valinta ja saa yhteisen kilpailutuloksen pisteet vain kerran.</li>
-                        <li>Parin hinta perustuu pelaajien keskiarvoratingiin; HeimBuhrg maksaa 285 000 €.</li>
+                        {pricingMode === 'relative' ? (
+                          <li>
+                            Parin hinta määräytyy keskiarvoratingin sijoituksesta tässä kentässä. Nimikohtainen
+                            poikkeus säilyy: HeimBuhrg 285 000 €.
+                          </li>
+                        ) : (
+                          <li>Parin hinta perustuu pelaajien keskiarvoratingiin; HeimBuhrg maksaa 285 000 €.</li>
+                        )}
                       </>
                     ) : (
                       <>
                         <li>Jokaiseen kilpailuun valitaan 5 heittäjää per joukkue.</li>
                         <li>Kaikkien valittujen pelaajien tulokset lasketaan mukaan joukkueen kokonaispisteisiin.</li>
+                        {pricingMode === 'relative' ? (
+                          <li>
+                            Tässä kisassa on käytössä heikomman kentän suhteellinen hinnoittelu: hinta määräytyy
+                            pelaajan sijoituksesta tässä kentässä ja vastaa normaalin kisan hintajakaumaa. Budjetti ja
+                            viiden pelaajan joukkue eivät muutu. Nimikohtaiset poikkeushinnat säilyvät.
+                          </li>
+                        ) : null}
                       </>
                     )}
                   </ul>
