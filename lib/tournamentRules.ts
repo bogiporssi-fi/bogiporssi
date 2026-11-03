@@ -30,3 +30,18 @@ export function getMarketEntityLabels(tournament: unknown) {
     ? { singular: 'pari', plural: 'paria', marketTitle: 'Paritori' }
     : { singular: 'pelaaja', plural: 'pelaajaa', marketTitle: 'Pelaajatori' };
 }
+
+/** absolute = rating-kaava. relative = kentän sisäinen suhteellinen hinnoittelu. */
+export type PricingMode = 'absolute' | 'relative';
+
+/**
+ * Puuttuva, tyhjä tai tuntematon arvo on aina absolute, jotta vanhat kisat
+ * ja migraatiota edeltävä skeema käyttäytyvät kuten ennen.
+ */
+export function getTournamentPricingMode(tournament: unknown): PricingMode {
+  const value =
+    tournament != null && typeof tournament === 'object'
+      ? (tournament as Record<string, unknown>).pricing_mode
+      : undefined;
+  return value === 'relative' ? 'relative' : 'absolute';
+}

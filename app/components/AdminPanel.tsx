@@ -6,7 +6,9 @@ import { isTournamentEffectivelyLocked, lockAtToDatetimeLocalValue, datetimeLoca
 import { pairMembersFromPlayer } from '../../lib/pairEntry';
 import {
   getDefaultBudgetForFormat,
+  getTournamentPricingMode,
   isMpoPairsTournament,
+  type PricingMode,
   type TournamentFormat,
 } from '../../lib/tournamentRules';
 
@@ -23,7 +25,8 @@ interface AdminPanelProps {
   handleRatingImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleDoublesFieldImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
   importResultsFromCsvFile: (file: File) => void | Promise<void>;
-  startNewTournament: (nextFormat: TournamentFormat) => void;
+  startNewTournament: (nextFormat: TournamentFormat, nextPricingMode: PricingMode) => void;
+  updateTournamentPricingMode: (mode: PricingMode) => void;
   restoreSinglesMode: () => void | Promise<void>;
   toggleTournamentLock: () => void;
   updateTournamentLockSchedule: (lockAtIso: string | null) => void | Promise<void>;
@@ -93,6 +96,7 @@ export default function AdminPanel({
   toggleTournamentLock,
   updateTournamentLockSchedule,
   updateTournamentBudget,
+  updateTournamentPricingMode,
   picksRowCountForActiveTournament,
   allTeamsPicks,
   profiles,
@@ -110,6 +114,9 @@ export default function AdminPanel({
   const [lockScheduleInput, setLockScheduleInput] = useState('');
   const [budgetInput, setBudgetInput] = useState(String(DEFAULT_BUDGET));
   const [nextTournamentFormat, setNextTournamentFormat] = useState<TournamentFormat>('singles');
+  const [nextPricingMode, setNextPricingMode] = useState<PricingMode>('absolute');
+  const [pricingModeInput, setPricingModeInput] = useState<PricingMode>('absolute');
+  const activePricingMode = getTournamentPricingMode(activeTournament);
   const [, setScheduleTick] = useState(0);
 
   useEffect(() => {
@@ -122,10 +129,15 @@ export default function AdminPanel({
     setBudgetInput(String(budget));
   }, [activeTournament?.budget, activeTournament?.id]);
 
-  // Uuden kisan jälkeen formaattivalinta palaa aina normaaliin oletukseen.
+  // Uuden kisan jälkeen muoto ja hinnoittelu palaavat aina normaaliin oletukseen.
   useEffect(() => {
     setNextTournamentFormat('singles');
+    setNextPricingMode('absolute');
   }, [activeTournament?.season_segment, activeTournament?.id]);
+
+  useEffect(() => {
+    setPricingModeInput(activeTournament?.pricing_mode === 'relative' ? 'relative' : 'absolute');
+  }, [activeTournament?.pricing_mode, activeTournament?.id]);
 
   useEffect(() => {
     const lockAt = activeTournament?.lock_at;
@@ -950,8 +962,20 @@ export default function AdminPanel({
             <option value="singles">Seuraava: normaali</option>
             <option value="mpo_pairs">Seuraava: MPO-parit</option>
           </select>
+
+          <select
+            value={nextPricingMode}
+            onChange={(event) => setNextPricingMode(event.target.value as PricingMode)}
+            className="bp-input"
+            aria-label="Seuraavan kisan hinnoittelu"
+            title="Seuraavan kisan hinnoittelu. Heikompi kenttä käyttää suhteellista hinnoittelua. Oletus on normaali rating-kaava."
+            style={{ minWidth: '220px' }}
+          >
+            <option value="absolute">Hinnoittelu: normaali</option>
+            <option value="relative">Hinnoittelu: heikompi kenttä</option>
+          </select>
           
-          <button onClick={() => startNewTournament(nextTournamentFormat)} className="bp-btn-primary">
+          <button onClick={() => startNewTournament(nextTournamentFormat, nextPricingMode)} className="bp-btn-primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 4v16m8-8H4" />
             </svg>
@@ -1013,6 +1037,13 @@ export default function AdminPanel({
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Kisamuoto:</strong>{' '}
           {pairsMode ? 'MPO-parikisa — 3 paria ja 600 000 €.' : 'Normaali kisa — 5 pelaajaa.'}{' '}
           Uuden kisan valinta koskee aina seuraavaa kilpailua ja oletuksena on normaali kisa.
+        </p>
+        <p style={{ margin: '0 0 8px' }}>
+          <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Hinnoittelu:</strong>{' '}
+          {activePricingMode === 'relative'
+            ? 'Heikompi kenttä / suhteellinen hinnoittelu — hinta määräytyy sijoituksesta tässä kentässä. Budjetti ja pelaajamäärä eivät muutu.'
+            : 'Normaali rating-kaava. Oletus ja kaikki vanhat kisat käyttävät tätä.'}{' '}
+          Seuraavan kisan tila valitaan yläpalkista. Käynnissä olevan kisan tilan voi vaihtaa alta.
         </p>
         <p style={{ margin: '0 0 8px' }}>
           <strong style={{ color: 'rgba(255,255,255,0.88)' }}>Rating CSV</strong> — rivit{' '}
@@ -1150,12 +1181,57 @@ export default function AdminPanel({
 
       <div style={styles.tournamentNameBox}>
         <div style={styles.labelRow}>
+          <div style={styles.dot('#38bdf8')} />
+          <label style={styles.label} htmlFor="pricing-mode-select">Hinnoittelutapa</label>
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
+          Normaali käyttää rating-kaavaa: vähintään 130 000 €, muuten (rating − 950) × 2 600.
+          Heikompi kenttä / suhteellinen hinnoittelu hinnoittelee pelaajan sen mukaan, miten hän sijoittuu
+          tämän kisan kentässä, niin että hintajakauma vastaa normaalia kenttää. Budjetti ja joukkueen koko
+          eivät muutu (singles: 1 000 000 € ja 5 pelaajaa). Nimikohtaiset poikkeushinnat säilyvät.
+          Jo tallennetut ostohinnat eivät muutu; torin avoimet hinnat päivittyvät heti.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', maxWidth: '640px' }}>
+          <select
+            id="pricing-mode-select"
+            className="bp-input"
+            value={pricingModeInput}
+            onChange={(event) => setPricingModeInput(event.target.value as PricingMode)}
+            disabled={!tournamentId}
+            aria-label="Tämän kisan hinnoittelutapa"
+            style={{ flex: '1 1 280px', minWidth: 0 }}
+          >
+            <option value="absolute">Normaali (rating-kaava)</option>
+            <option value="relative">Heikompi kenttä / suhteellinen hinnoittelu</option>
+          </select>
+          <button
+            type="button"
+            className="bp-tab"
+            disabled={!tournamentId}
+            onClick={() => void updateTournamentPricingMode(pricingModeInput)}
+          >
+            Tallenna hinnoittelu
+          </button>
+        </div>
+        <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+          Käytössä:{' '}
+          {activePricingMode === 'relative'
+            ? 'Heikompi kenttä / suhteellinen hinnoittelu'
+            : 'Normaali (rating-kaava)'}
+          {pairsMode && activePricingMode === 'relative'
+            ? '. Parikisassa hinta määräytyy parin keskiarvoratingin sijoituksesta, budjetti pysyy parikisan budjettina.'
+            : '.'}
+        </p>
+      </div>
+
+      <div style={styles.tournamentNameBox}>
+        <div style={styles.labelRow}>
           <div style={styles.dot('#a78bfa')} />
           <label style={styles.label}>Pelaajavaihto (admin)</label>
         </div>
         <p style={{ margin: '0 0 10px', fontSize: '12px', lineHeight: 1.5, color: 'rgba(255,255,255,0.55)' }}>
           Korvaa yhden managerin valinnan toisella pelaajalla ilman että koko turnausta avataan. Tarkoitus esim. pois jääneen heittäjän tilalle ennen pistetietoja.{' '}
-          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Uusi ostorivi</strong> lasketaan nykyisen rating-kaavan mukaan; cache-kenttä{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.82)' }}>Uusi ostorivi</strong> lasketaan tämän kisan hinnoittelutavan mukaan; cache-kenttä{' '}
           <span style={{ fontFamily: 'ui-monospace, monospace', color: 'rgba(167,243,208,0.85)' }}>earned_points</span> nollataan.
         </p>
         {!tournamentId ? (

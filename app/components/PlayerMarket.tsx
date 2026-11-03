@@ -22,6 +22,7 @@ interface PlayerMarketProps {
   teamDisplayName: string;
   rosterSize: number;
   isPairsMode: boolean;
+  relativePricing?: boolean;
 }
 
 /** Fi-locale käyttää välilyöntejä tuhaterottimina — vaihdetaan sitovat välilyönnit ettei numero hajoa kahdelle riville */
@@ -54,6 +55,7 @@ export default function PlayerMarket({
   teamDisplayName,
   rosterSize,
   isPairsMode,
+  relativePricing = false,
 }: PlayerMarketProps) {
   const minPrice = getPrice(950);
   const showTeamLogo = Boolean(teamLogoPath || parseTeamLogoId(teamLogoId));
@@ -107,7 +109,13 @@ export default function PlayerMarket({
         <div className="min-w-0">
           <h2 className="pm-title">{isPairsMode ? "Paritori" : "Pelaajatori"}</h2>
           <p className="pm-sub">
-            {isPairsMode ? "Etsi ja osta pareja joukkueeseen." : "Etsi ja osta pelaajia joukkueeseen."}
+            {relativePricing
+              ? isPairsMode
+                ? "Parin hinta määräytyy sijoituksesta tässä kentässä."
+                : "Hinnat on suhteutettu tämän kisan kenttään."
+              : isPairsMode
+                ? "Etsi ja osta pareja joukkueeseen."
+                : "Etsi ja osta pelaajia joukkueeseen."}
           </p>
         </div>
         <div className="pm-input-wrap">
